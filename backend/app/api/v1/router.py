@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from backend.app.core.config import settings
+from backend.app.api.v1.endpoints import chat
 
 api_router = APIRouter()
 
@@ -18,8 +19,7 @@ async def health_check():
     }
 
 
-# Los routers específicos se montarán conforme completemos sus módulos:
-# from backend.app.api.v1.endpoints import chat, rpa, telemetry
-# api_router.include_router(chat.router, prefix="/chat", tags=["Cerebro Conversacional"])
+# Montaje modular de sub-routers v1
+api_router.include_router(chat.router, prefix="/chat", tags=["Cerebro Conversacional"])
 # api_router.include_router(rpa.router, prefix="/rpa", tags=["Automatización RPA"])
 # api_router.include_router(telemetry.router, prefix="/telemetry", tags=["Telemetría Cuantitativa"])
