@@ -1,0 +1,62 @@
+# Entorno y variables secretas (LGPDPPSO)
+.env
+.env.local
+.env.*.local
+*.env
+
+# Python y caché
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Entornos virtuales
+venv/
+env/
+ENV/
+.venv/
+tesis_bot_py311/
+
+# Almacén efímero de descargas (Protección de datos personales)
+backend/data/downloads/*
+!backend/data/downloads/.gitkeep
+
+# Playwright y navegadores
+.playwright/
+test-results/
+
+# Node y Next.js (Frontend)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+.npm
+.yarn
+
+# Logs y bases locales
+*.log
+*.sqlite3
+
+# IDEs y SO (macOS)
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.vscode/
+.idea/
