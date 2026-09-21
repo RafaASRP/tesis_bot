@@ -1,73 +1,39 @@
 import os
-import time
+import shutil
 import logging
 from pathlib import Path
-from typing import Optional
 from backend.app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 
-class EphemeralFileManager:
+def purge_ephemeral_storage():
     """
-    Gestor de purga y ciclo de vida efímero para documentos oficiales y archivos temporales.
-    Garantiza el cumplimiento del principio de minimización de datos (LGPDPPSO).
+    Elimina archivos PDF descargados y limpia perfiles temporales de Playwright
+    para garantizar el cumplimiento de la LGPDPPSO y evitar saturación de I/O.
     """
+    downloads_path = Path(settings.DOWNLOADS_PATH)
+    if downloads_path.exists():
+        for file in downloads_path.glob("*.pdf"):
+            try:
+                file.unlink()
+                logger.info(f"Archivo efímero eliminado: {file.name}")
+            except Exception as e:
+                logger.warning(f"No se pudo eliminar {file.name}: {e}")
 
-    def __init__(self, target_dir: Optional[Path] = None):
-        self.target_dir = Path(target_dir or settings.DOWNLOADS_PATH)
-        self._ensure_directory()
-
-    def _ensure_directory(self) -> None:
-        """Crea el directorio de descargas efímeras si no existe."""
+    # Limpieza de perfiles residuales en /tmp
+    tmp_path = Path("/tmp")
+    for item in tmp_path.glob("playwright_*"):
         try:
-            self.target_dir.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            logger.error(f"Error al asegurar el directorio efímero {self.target_dir}: {e}")
-
-    def purge_file(self, file_path: Path) -> bool:
-        """
-        Elimina de forma segura un archivo individual inmediatamente tras su entrega o error.
-        """
-        path = Path(file_path)
-        try:
-            if path.is_file() and path.exists():
-                path.unlink(missing_ok=True)
-                logger.info(f"Archivo efímero purgado exitosamente: {path.name}")
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Fallo al purgar archivo efímero {path}: {e}")
-            return False
-
-    def purge_expired_files(self, max_age_seconds: int = 300) -> int:
-        """
-        Elimina todos los archivos del directorio de descargas cuya antigüedad
-        supere el umbral establecido (por defecto 300 segundos = 5 minutos).
-        Retorna la cantidad de archivos purgados.
-        """
-        if not self.target_dir.exists():
-            return 0
-
-        current_time = time.time()
-        purged_count = 0
-
-        try:
-            for item in self.target_dir.iterdir():
-                if item.is_file() and not item.name.startswith("."):
-                    file_age = current_time - item.stat().st_mtime
-                    if file_age >= max_age_seconds:
-                        try:
-                            item.unlink(missing_ok=True)
-                            purged_count += 1
-                            logger.info(f"Purga programada: archivo expirado eliminado -> {item.name}")
-                        except Exception as file_err:
-                            logger.error(f"Error al purgar archivo {item.name}: {file_err}")
-        except Exception as dir_err:
-            logger.error(f"Error al explorar directorio efímero durante purga: {dir_err}")
-
-        return purged_count
+            if item.is_dir():
+                shutil.rmtree(item, ignore_errors=True)
+            else:
+                item.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
-# Instancia singleton para BackgroundTasks y servicios RPA
-cleaner_manager = EphemeralFileManager()
+def reset_environment_caches():
+    """Limpia variables y archivos temporales del sistema."""
+    os.system("pkill -f 'Chromium|Google Chrome' 2>/dev/null || true")
+    purge_ephemeral_storage()
