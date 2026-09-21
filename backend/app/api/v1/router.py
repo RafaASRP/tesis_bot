@@ -1,8 +1,8 @@
 from fastapi import APIRouter
-from backend.app.api.v1.endpoints import chat
+from backend.app.api.v1.endpoints import chat, telemetry
 
 api_router = APIRouter()
 
-# Registro de rutas modulares
+# Registro de rutas modulares del monorepo
 api_router.include_router(chat.router, prefix="/chat", tags=["Conversacional NLP"])
-# Aquí conectaremos los endpoints RPA y de Telemetría en el futuro
+api_router.include_router(telemetry.router, prefix="/telemetry", tags=["Telemetría y Usabilidad SUS"])
