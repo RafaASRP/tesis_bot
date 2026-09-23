@@ -1,47 +1,31 @@
+from fastapi import APIRouter, BackgroundTasks
 import logging
-from fastapi import APIRouter, HTTPException
-from app.models.telemetry import TelemetryTaskCreate, TelemetrySUSCreate
-from app.core.supabase import supabase
+from app.models.telemetry import TelemetryPayload, SUSPayload
+from app.core.supabase import get_supabase_client
 
-logger = logging.getLogger(__name__)
 router = APIRouter()
+logger = logging.getLogger("govassist-telemetry")
 
-# Almacén temporal en memoria para respaldo offline (fallback)
-OFFLINE_TELEMETRY_TASKS = []
-OFFLINE_TELEMETRY_SUS = []
-
-@router.post("/task", status_code=201)
-async def record_task_telemetry(data: TelemetryTaskCreate):
-    """
-    Registra las métricas cuantitativas de rendimiento (T, E, L, S)
-    para la comparativa Pre-test vs Post-test.
-    """
+def _save_to_supabase(table: str, data: dict):
+    """Función de contingencia para escritura asíncrona segura."""
     try:
-        if supabase:
-            response = supabase.table("telemetry_tasks").insert(data.model_dump()).execute()
-            return {"status": "success", "persisted_in": "supabase", "data": response.data}
+        client = get_supabase_client()
+        if client:
+            client.table(table).insert(data).execute()
+            logger.info(f"Telemetría registrada en {table} exitosamente.")
         else:
-            OFFLINE_TELEMETRY_TASKS.append(data.model_dump())
-            logger.warning("Supabase no disponible. Métrica de tarea guardada en memoria local (offline).")
-            return {"status": "success", "persisted_in": "local_memory", "data": data.model_dump()}
+            logger.warning(f"Modo offline activo. Métrica {table} guardada en bitácora local: {data}")
     except Exception as e:
-        logger.error(f"Error al persistir telemetría de tarea: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error interno al registrar telemetría.")
+        logger.error(f"Fallo al registrar telemetría en {table}: {str(e)}. Fallback a log local: {data}")
 
-@router.post("/sus", status_code=201)
-async def record_sus_telemetry(data: TelemetrySUSCreate):
-    """
-    Registra las respuestas del cuestionario SUS (Escala de Usabilidad del Sistema)
-    y su puntaje global calculado.
-    """
-    try:
-        if supabase:
-            response = supabase.table("telemetry_sus").insert(data.model_dump()).execute()
-            return {"status": "success", "persisted_in": "supabase", "data": response.data}
-        else:
-            OFFLINE_TELEMETRY_SUS.append(data.model_dump())
-            logger.warning("Supabase no disponible. Cuestionario SUS guardado en memoria local (offline).")
-            return {"status": "success", "persisted_in": "local_memory", "data": data.model_dump()}
-    except Exception as e:
-        logger.error(f"Error al persistir cuestionario SUS: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error interno al registrar evaluación SUS.")
+@router.post("/metrics", summary="Registra métricas cuantitativas T, E, L, S")
+async def record_metrics(payload: TelemetryPayload, background_tasks: BackgroundTasks):
+    """Captura métricas de rendimiento para la evaluación cuasi-experimental."""
+    background_tasks.add_task(_save_to_supabase, "telemetry_metrics", payload.model_dump())
+    return {"status": "success", "message": "Métricas T, E, L, S encoladas para registro."}
+
+@router.post("/sus", summary="Registra evaluación de usabilidad SUS")
+async def record_sus(payload: SUSPayload, background_tasks: BackgroundTasks):
+    """Captura los 10 reactivos del cuestionario SUS y su puntaje global."""
+    background_tasks.add_task(_save_to_supabase, "sus_evaluations", payload.model_dump())
+    return {"status": "success", "message": "Evaluación SUS encolada para registro."}

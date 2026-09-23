@@ -1,4 +1,4 @@
-import type { Config } from 'tailwindcss'
+import type { Config } from "tailwindcss";
 
 const config: Config = {
   content: [
@@ -9,26 +9,31 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Paleta de alto contraste optimizada para WCAG 2.1 AA (Adultos Mayores)
+        // Paleta de Alto Contraste (WCAG 2.1 AA) para adultos 50+
         gov: {
-          primary: "#0B231E",    // Verde institucional oscuro / Guinda institucional
-          burgundy: "#6A1B29",   // Guinda gob.mx
-          accent: "#1D4ED8",     // Azul interactivo de alto contraste
-          bg: "#F9FAFB",         // Fondo claro legible
-          card: "#FFFFFF",       // Superficie de tarjetas limpia
-          text: "#111827",       // Texto principal casi negro para máxima legibilidad
-          muted: "#4B5563",      // Texto secundario contrastado
+          primary: "#0B231E", // Verde oscuro institucional
+          secondary: "#13322B", 
+          accent: "#9D2449", // Guinda institucional (Botones de acción primaria)
+          background: "#FAFAFA", // Fondo claro cálido para evitar fatiga visual
+          surface: "#FFFFFF",
+          text: "#1A1A1A", // Texto casi negro para máximo contraste (ratio > 4.5:1)
+          muted: "#4A4A4A", // Texto secundario
+          border: "#CCCCCC",
+          focus: "#005EB8", // Azul eléctrico para anillos de enfoque accesibles
+          error: "#D32F2F", // Rojo para alertas
         }
       },
+      spacing: {
+        '12': '3rem', // Garantiza áreas táctiles mínimas de 48x48 px (12 * 0.25rem = 3rem = 48px)
+      },
       fontSize: {
-        // Tamaños de fuente aumentados para accesibilidad cognitiva y visual
-        base: ["1.125rem", { lineHeight: "1.75rem" }], // 18px base
-        lg: ["1.25rem", { lineHeight: "1.75rem" }],
-        xl: ["1.5rem", { lineHeight: "2rem" }],
-        "2xl": ["1.875rem", { lineHeight: "2.25rem" }],
+        'base': '1.125rem', // 18px base para mejor legibilidad en adultos mayores
+        'lg': '1.25rem',    // 20px
+        'xl': '1.5rem',     // 24px
+        '2xl': '1.875rem',  // 30px
       }
     },
   },
   plugins: [],
-}
-export default config
+};
+export default config;

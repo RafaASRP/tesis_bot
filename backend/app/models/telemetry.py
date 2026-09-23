@@ -1,25 +1,16 @@
 from pydantic import BaseModel, Field
+from typing import List
 
-class TelemetryTaskCreate(BaseModel):
-    session_id: str = Field(..., description="ID único de la sesión del usuario")
-    procedure_name: str = Field(..., description="Nombre del trámite: curp, acta_nacimiento, nss, pasaporte, cedula")
-    evaluation_stage: str = Field(..., pattern="^(pre_test|post_test)$", description="Fase de evaluación cuasi-experimental")
-    task_time_seconds: float = Field(..., ge=0, description="Tiempo de ejecución en segundos (T)")
-    error_count: int = Field(..., ge=0, description="Número de errores cometidos (E)")
-    llm_latency_seconds: float = Field(..., ge=0, description="Latencia del motor NLP/LLM (L)")
-    success_status: int = Field(..., ge=0, le=1, description="Éxito dicotómico (S): 1 = Éxito, 0 = Abandono")
+class TelemetryPayload(BaseModel):
+    session_id: str = Field(..., description="Identificador único de la sesión")
+    procedure_type: str = Field(..., description="Tipo de trámite (ej. CURP, Acta)")
+    task_time_seconds: float = Field(..., ge=0.0, description="Tiempo de ejecución (T)")
+    error_count: int = Field(default=0, ge=0, description="Tasa de error (E)")
+    llm_latency_ms: float = Field(..., ge=0.0, description="Latencia del LLM (L)")
+    success: int = Field(..., ge=0, le=1, description="Tasa de éxito dicotómica (S: 1=Éxito / 0=Abandono)")
+    is_post_test: bool = Field(default=True, description="Bandera para diseño cuasi-experimental")
 
-class TelemetrySUSCreate(BaseModel):
-    session_id: str = Field(..., description="ID único de la sesión del usuario")
-    evaluation_stage: str = Field(..., pattern="^(pre_test|post_test)$", description="Fase de evaluación")
-    q1: int = Field(..., ge=0, le=4)
-    q2: int = Field(..., ge=0, le=4)
-    q3: int = Field(..., ge=0, le=4)
-    q4: int = Field(..., ge=0, le=4)
-    q5: int = Field(..., ge=0, le=4)
-    q6: int = Field(..., ge=0, le=4)
-    q7: int = Field(..., ge=0, le=4)
-    q8: int = Field(..., ge=0, le=4)
-    q9: int = Field(..., ge=0, le=4)
-    q10: int = Field(..., ge=0, le=4)
-    total_sus_score: float = Field(..., ge=0, le=100, description="Puntaje global SUS escalado de 0 a 100")
+class SUSPayload(BaseModel):
+    session_id: str = Field(..., description="Identificador único de la sesión")
+    scores: List[int] = Field(..., min_length=10, max_length=10, description="10 reactivos Likert")
+    global_score: float = Field(..., ge=0.0, le=100.0, description="Puntaje global SUS (0 a 100)")

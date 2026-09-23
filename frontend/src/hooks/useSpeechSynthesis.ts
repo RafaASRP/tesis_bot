@@ -1,61 +1,45 @@
-import { useState, useEffect, useCallback } from 'react';
+"use client";
 
-export function useSpeechSynthesis() {
-  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
-  const [hasSupport, setHasSupport] = useState<boolean>(false);
+import { useState, useCallback, useEffect } from 'react';
+
+export const useSpeechSynthesis = () => {
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [supported, setSupported] = useState(false);
 
   useEffect(() => {
+    // Verificación segura para evitar errores de SSR en Next.js
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      setHasSupport(true);
+      setSupported(true);
     }
   }, []);
 
   const speak = useCallback((text: string) => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-
-    const synth = window.speechSynthesis;
-
-    // Detener cualquier locución previa en curso
-    if (synth.speaking) {
-      synth.cancel();
-    }
-
-    if (!text.trim()) return;
-
+    if (!supported) return;
+    
+    // Limpiar cualquier locución previa en cola
+    window.speechSynthesis.cancel(); 
+    
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "es-MX";
-    utterance.rate = 0.85; // Velocidad reducida a 0.85x para accesibilidad cognitiva de adultos mayores
+    // Modulación estricta a 0.85x para accesibilidad cognitiva de adultos mayores
+    utterance.rate = 0.85; 
     utterance.pitch = 1.0;
 
-    utterance.onstart = () => {
-      setIsSpeaking(true);
-    };
-
-    utterance.onend = () => {
-      setIsSpeaking(false);
-    };
-
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
     utterance.onerror = (event) => {
-      console.error("Error en síntesis de voz (TTS):", event);
+      console.error("Error en telemetría de TTS:", event);
       setIsSpeaking(false);
     };
 
-    synth.speak(utterance);
-  }, []);
+    window.speechSynthesis.speak(utterance);
+  }, [supported]);
 
   const stop = useCallback(() => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    const synth = window.speechSynthesis;
-    if (synth.speaking) {
-      synth.cancel();
-      setIsSpeaking(false);
-    }
-  }, []);
+    if (!supported) return;
+    window.speechSynthesis.cancel();
+    setIsSpeaking(false);
+  }, [supported]);
 
-  return {
-    isSpeaking,
-    hasSupport,
-    speak,
-    stop,
-  };
-}
+  return { speak, stop, isSpeaking, supported };
+};

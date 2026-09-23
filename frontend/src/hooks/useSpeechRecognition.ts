@@ -1,93 +1,69 @@
-import { useState, useEffect, useCallback } from 'react';
+"use client";
 
-// Declaración de tipos para la Web Speech API nativa del navegador
-interface IWindow extends Window {
-  SpeechRecognition?: any;
-  webkitSpeechRecognition?: any;
-}
+import { useState, useCallback, useEffect } from 'react';
 
-export function useSpeechRecognition() {
-  const [transcript, setTranscript] = useState<string>("");
-  const [isListening, setIsListening] = useState<boolean>(false);
-  const [hasSupport, setHasSupport] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-
-  let recognition: any = null;
+export const useSpeechRecognition = () => {
+  const [isListening, setIsListening] = useState(false);
+  const [transcript, setTranscript] = useState("");
+  const [supported, setSupported] = useState(false);
+  const [recognition, setRecognition] = useState<any>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const browserWindow = window as IWindow;
-      const SpeechRecognitionAPI = browserWindow.SpeechRecognition || browserWindow.webkitSpeechRecognition;
-      
-      if (SpeechRecognitionAPI) {
-        setHasSupport(true);
-      } else {
-        setHasSupport(false);
+      // Soporte multiplataforma para Chrome/Safari
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        setSupported(true);
+        const rec = new SpeechRecognition();
+        rec.continuous = false;
+        rec.interimResults = true;
+        rec.lang = 'es-MX';
+        setRecognition(rec);
       }
     }
   }, []);
 
   const startListening = useCallback(() => {
-    if (typeof window === "undefined") return;
-    const browserWindow = window as IWindow;
-    const SpeechRecognitionAPI = browserWindow.SpeechRecognition || browserWindow.webkitSpeechRecognition;
-
-    if (!SpeechRecognitionAPI) {
-      setError("El reconocimiento de voz no es compatible con este navegador.");
-      return;
-    }
-
+    if (!recognition) return;
     try {
-      recognition = new SpeechRecognitionAPI();
-      recognition.lang = "es-MX"; // Español de México para modulación local correcta
-      recognition.continuous = false;
-      recognition.interimResults = true;
-
-      recognition.onstart = () => {
-        setIsListening(true);
-        setError(null);
-      };
-
+      recognition.start();
+      setIsListening(true);
+      setTranscript("");
+      
       recognition.onresult = (event: any) => {
-        const current = event.resultIndex;
-        const text = event.results[current][0].transcript;
-        setTranscript(text);
+        let interimTranscript = '';
+        let finalTranscript = '';
+        
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+        // Priorizar el resultado final, hacer fallback al interino (UX en tiempo real)
+        setTranscript(finalTranscript || interimTranscript);
       };
 
       recognition.onerror = (event: any) => {
-        setError(`Error en reconocimiento: ${event.error}`);
+        console.error("Error de captura STT:", event.error);
         setIsListening(false);
       };
 
       recognition.onend = () => {
         setIsListening(false);
       };
-
-      recognition.start();
-    } catch (err: any) {
-      setError(`No se pudo iniciar el micrófono: ${err.message}`);
+    } catch (error) {
+      console.error("Error iniciando el micrófono:", error);
       setIsListening(false);
     }
-  }, []);
+  }, [recognition]);
 
   const stopListening = useCallback(() => {
-    if (recognition) {
-      recognition.stop();
-    }
+    if (!recognition) return;
+    recognition.stop();
     setIsListening(false);
-  }, []);
+  }, [recognition]);
 
-  const resetTranscript = useCallback(() => {
-    setTranscript("");
-  }, []);
-
-  return {
-    transcript,
-    isListening,
-    hasSupport,
-    error,
-    startListening,
-    stopListening,
-    resetTranscript,
-  };
-}
+  return { startListening, stopListening, isListening, transcript, supported };
+};

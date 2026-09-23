@@ -1,3 +1,14 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gov-background text-gov-text font-sans antialiased selection:bg-gov-focus selection:text-white;
+  }
+  
+  /* Enfoque global accesible para navegación por teclado / lectores de pantalla */
+  *:focus-visible {
+    @apply outline-none ring-4 ring-gov-focus ring-offset-2;
+  }
+}
