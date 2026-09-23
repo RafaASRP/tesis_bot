@@ -3,8 +3,8 @@ import re
 import logging
 from typing import List, Dict, Tuple, Any, Optional
 from groq import AsyncGroq
-from backend.app.models.chat import MessageItem
-from backend.app.core.config import settings
+from app.models.chat import MessageItem
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 

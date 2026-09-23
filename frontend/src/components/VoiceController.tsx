@@ -1,66 +1,65 @@
 "use client";
 
-import React, { useEffect } from "react";
-import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
-import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
+import React, { useState, useEffect, useRef } from "react";
 
 interface VoiceControllerProps {
-  onTranscript: (text: string) => void;
-  lastAssistantMessage?: string;
+  onResult: (text: string) => void;
+  disabled?: boolean;
 }
 
-export default function VoiceController({ onTranscript, lastAssistantMessage }: VoiceControllerProps) {
-  const { transcript, isListening, hasSupport: hasMicSupport, startListening, stopListening } = useSpeechRecognition();
-  const { isSpeaking, hasSupport: hasTtsSupport, speak, stop: stopSpeaking } = useSpeechSynthesis();
+export default function VoiceController({ onResult, disabled = false }: VoiceControllerProps) {
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
 
-  // Cada vez que cambia el texto reconocido por voz, lo mandamos al contenedor principal
   useEffect(() => {
-    if (transcript) {
-      onTranscript(transcript);
-    }
-  }, [transcript, onTranscript]);
+    if (typeof window !== "undefined") {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        recognitionRef.current = new SpeechRecognition();
+        recognitionRef.current.continuous = false;
+        recognitionRef.current.interimResults = false;
+        recognitionRef.current.lang = "es-MX";
 
-  // Cada vez que el asistente responde con un nuevo mensaje, sintetizamos la voz automáticamente
-  useEffect(() => {
-    if (lastAssistantMessage && hasTtsSupport) {
-      speak(lastAssistantMessage);
-    }
-  }, [lastAssistantMessage, hasTtsSupport, speak]);
+        recognitionRef.current.onresult = (event: any) => {
+          const transcript = event.results[0][0].transcript;
+          onResult(transcript);
+          setIsListening(false);
+        };
 
-  if (!hasMicSupport && !hasTtsSupport) {
-    return null;
-  }
+        recognitionRef.current.onerror = (event: any) => {
+          console.error("Error Web Speech API:", event.error);
+          setIsListening(false);
+        };
+
+        recognitionRef.current.onend = () => {
+          setIsListening(false);
+        };
+      }
+    }
+  }, [onResult]);
+
+  const toggleListening = () => {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+    } else {
+      recognitionRef.current?.start();
+      setIsListening(true);
+    }
+  };
 
   return (
-    <div className="flex items-center gap-4 p-4 bg-white border-t border-gray-200 shadow-md rounded-t-2xl">
-      {/* Botón de Micrófono / Hablar */}
-      {hasMicSupport && (
-        <button
-          onClick={isListening ? stopListening : startListening}
-          className={`flex-1 flex items-center justify-center gap-2 py-4 px-6 rounded-xl font-bold text-lg transition-all min-h-[56px] shadow-sm ${
-            isListening
-              ? "bg-red-600 text-white animate-pulse"
-              : "bg-gov-burgundy text-white hover:bg-opacity-90 active:scale-95"
-          }`}
-          aria-label={isListening ? "Detener grabación de voz" : "Hablar con el asistente"}
-        >
-          <span className="text-2xl" role="img" aria-hidden="true">
-            {isListening ? "🛑" : "🎙️"}
-          </span>
-          <span>{isListening ? "Escuchando... (Toque para terminar)" : "Tocar para hablar"}</span>
-        </button>
-      )}
-
-      {/* Botón de Silenciar / Detener Voz del Asistente */}
-      {hasTtsSupport && isSpeaking && (
-        <button
-          onClick={stopSpeaking}
-          className="py-4 px-5 bg-gray-200 text-gray-800 rounded-xl font-semibold hover:bg-gray-300 transition-all min-h-[56px]"
-          aria-label="Silenciar asistente"
-        >
-          🔇 Silenciar voz
-        </button>
-      )}
-    </div>
+    <button
+      onClick={toggleListening}
+      disabled={disabled}
+      type="button"
+      className={`min-h-[48px] min-w-[48px] rounded-lg px-4 font-bold text-lg transition-colors flex items-center justify-center ${
+        isListening ? "bg-red-600 text-white animate-pulse" : "bg-[#0B231E] text-white"
+      } disabled:opacity-50`}
+      aria-label={isListening ? "Detener grabación de voz" : "Iniciar dictado por voz"}
+      title="Dictar por voz"
+    >
+      {isListening ? "🎙️..." : "🎤"}
+    </button>
   );
 }

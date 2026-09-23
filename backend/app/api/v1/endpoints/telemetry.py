@@ -1,7 +1,7 @@
 import logging
 from fastapi import APIRouter, HTTPException
-from backend.app.models.telemetry import TelemetryTaskCreate, TelemetrySUSCreate
-from backend.app.core.supabase import supabase
+from app.models.telemetry import TelemetryTaskCreate, TelemetrySUSCreate
+from app.core.supabase import supabase
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

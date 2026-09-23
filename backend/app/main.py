@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.app.api.v1.router import api_router
-from backend.app.core.cleaner import setup_cleanup_task
+from app.api.v1.router import api_router
+from app.core.cleaner import setup_cleanup_task
 
 app = FastAPI(
     title="GovAssist Core API",

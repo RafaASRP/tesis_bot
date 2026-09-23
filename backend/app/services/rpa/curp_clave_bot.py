@@ -5,8 +5,8 @@ import subprocess
 from pathlib import Path
 from typing import Dict, Any, Optional
 from playwright.async_api import Page, TimeoutError as PlaywrightTimeoutError
-from backend.app.services.rpa.base import PlaywrightBaseEngine
-from backend.app.core.config import settings
+from app.services.rpa.base import PlaywrightBaseEngine
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 

@@ -1,8 +1,8 @@
 import time
 import logging
 from fastapi import APIRouter, HTTPException
-from backend.app.models.chat import ChatRequest, ChatResponse
-from backend.app.services.llm.groq_client import nlp_engine
+from app.models.chat import ChatRequest, ChatResponse
+from app.services.llm.groq_client import nlp_engine
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

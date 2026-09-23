@@ -2,8 +2,8 @@ import csv
 import json
 import logging
 from pathlib import Path
-from backend.app.core.supabase import supabase
-from backend.app.api.v1.endpoints.telemetry import OFFLINE_TELEMETRY_TASKS, OFFLINE_TELEMETRY_SUS
+from app.core.supabase import supabase
+from app.api.v1.endpoints.telemetry import OFFLINE_TELEMETRY_TASKS, OFFLINE_TELEMETRY_SUS
 
 logger = logging.getLogger(__name__)
 

@@ -1,39 +1,34 @@
 import os
-import shutil
 import logging
+import asyncio
 from pathlib import Path
-from backend.app.core.config import settings
+from app.core.config import settings
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("govassist-cleaner")
 
-
-def purge_ephemeral_storage():
+async def _periodic_cleanup() -> None:
     """
-    Elimina archivos PDF descargados y limpia perfiles temporales de Playwright
-    para garantizar el cumplimiento de la LGPDPPSO y evitar saturación de I/O.
+    Ciclo efímero de purga en segundo plano para cumplir con la privacidad 
+    desde el diseño (LGPDPPSO).
     """
-    downloads_path = Path(settings.DOWNLOADS_PATH)
-    if downloads_path.exists():
-        for file in downloads_path.glob("*.pdf"):
-            try:
-                file.unlink()
-                logger.info(f"Archivo efímero eliminado: {file.name}")
-            except Exception as e:
-                logger.warning(f"No se pudo eliminar {file.name}: {e}")
-
-    # Limpieza de perfiles residuales en /tmp
-    tmp_path = Path("/tmp")
-    for item in tmp_path.glob("playwright_*"):
+    while True:
         try:
-            if item.is_dir():
-                shutil.rmtree(item, ignore_errors=True)
-            else:
-                item.unlink(missing_ok=True)
-        except Exception:
-            pass
+            downloads_dir = Path(settings.DOWNLOADS_PATH)
+            if downloads_dir.exists():
+                for file_path in downloads_dir.glob("*.pdf"):
+                    if file_path.is_file():
+                        os.remove(file_path)
+                        logger.info(f"Purga efímera ejecutada de forma segura (LGPDPPSO): {file_path.name}")
+        except Exception as e:
+            logger.error(f"Error en tarea de purga estructurada: {e}")
+        
+        # Ejecutar barrido asíncrono cada 300 segundos (5 minutos) sin bloquear el hilo principal
+        await asyncio.sleep(300)
 
-
-def reset_environment_caches():
-    """Limpia variables y archivos temporales del sistema."""
-    os.system("pkill -f 'Chromium|Google Chrome' 2>/dev/null || true")
-    purge_ephemeral_storage()
+def setup_cleanup_task() -> None:
+    """
+    Inicializa la tarea asíncrona de limpieza de documentos temporales 
+    dentro del event loop principal de FastAPI.
+    """
+    logger.info("Activando protocolo asíncrono de purga de documentos temporales (LGPDPPSO)...")
+    asyncio.create_task(_periodic_cleanup())

@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 from llama_index.core import VectorStoreIndex
 from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.core.schema import NodeWithScore
-from backend.app.services.rag.ingestion import ingestion_pipeline
+from app.services.rag.ingestion import ingestion_pipeline
 
 logger = logging.getLogger(__name__)
 
