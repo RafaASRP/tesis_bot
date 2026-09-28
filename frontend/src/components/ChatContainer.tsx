@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
-import { useSpeechSynthesis } from '@/hooks/useSpeechSynthesis';
-import { sendChatMessage } from '@/lib/api';
+import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
+import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
+import { sendChatMessage } from '../lib/api';
 
 interface Message {
   id: string;
@@ -41,13 +41,13 @@ export default function ChatContainer() {
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsLoading(true);
-    stopSpeaking(); // Detener TTS si el usuario interrumpe
+    stopSpeaking(); 
 
     try {
       const response = await sendChatMessage({ message: textToSend });
       const botMsg: Message = { id: (Date.now() + 1).toString(), text: response.reply, sender: 'bot' };
       setMessages(prev => [...prev, botMsg]);
-      speak(response.reply); // Lectura automática modulada a 0.85x
+      speak(response.reply); 
     } catch (error) {
       const errorMsg: Message = { id: (Date.now() + 1).toString(), text: 'Lo siento, tuve un problema de red. ¿Podrías intentar de nuevo?', sender: 'bot' };
       setMessages(prev => [...prev, errorMsg]);
@@ -65,7 +65,6 @@ export default function ChatContainer() {
 
   return (
     <div className="w-full max-w-3xl bg-gov-surface shadow-xl rounded-2xl flex flex-col h-[70vh] border-2 border-gov-border">
-      {/* Historial de conversación accesible */}
       <div className="flex-1 p-6 overflow-y-auto space-y-6" role="log" aria-live="polite">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -84,7 +83,6 @@ export default function ChatContainer() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Controles táctiles (Áreas mínimas de 48x48 px - WCAG 2.1 AA) */}
       <div className="p-4 border-t-2 border-gov-border bg-gov-background rounded-b-2xl flex items-end gap-3">
         {sttSupported && (
           <button
