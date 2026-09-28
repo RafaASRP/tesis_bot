@@ -9,14 +9,13 @@ logger = logging.getLogger("govassist-chat")
 @router.post("/query", response_model=ChatResponse)
 async def chat_query(payload: ChatRequest):
     try:
-        user_message = ""
-        if payload.messages and len(payload.messages) > 0:
-            user_message = payload.messages[-1].content
+        messages = payload.messages or []
+        last_msg = messages[-1].content if messages else ""
         
-        logger.info(f"Procesando entrada natural de usuario: {user_message[:60]}...")
+        logger.info(f"Procesando historial de chat ({len(messages)} mensajes). Último: {last_msg[:40]}...")
         
-        # Invocación al motor inteligente Groq LPU con prompt empático y fallback heurístico
-        reply = get_groq_response(user_message)
+        # Enviar todo el historial para mantener memoria contextual
+        reply = get_groq_response(messages)
 
         return ChatResponse(
             reply=reply,
