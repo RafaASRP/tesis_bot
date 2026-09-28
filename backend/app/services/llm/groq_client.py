@@ -8,12 +8,12 @@ logger = logging.getLogger("govassist-groq")
 # Almacén de sesiones en memoria RAM para control estricto de ranuras (Slot-Filling)
 SESSION_STATES = {}
 
-# Lista de saludos cálidos y variados para evitar repeticiones robóticas
+# Saludos cálidos, variados y humanos para evitar repeticiones robóticas
 GREETINGS = [
-    "¡Qué gusto saludarte de nuevo! Vamos a avanzar con calma.",
-    "Hola, qué bueno verte por aquí otra vez. Estoy listo para ayudarte.",
-    "¡Hola! Qué gusto saludarte. No te preocupes, lo hacemos paso a paso.",
-    "Hola, bienvenido de nuevo. Vamos a resolver tu trámite con calma y seguridad."
+    "¡Qué gusto saludarte! Vamos a realizar tu trámite paso a paso y con toda la calma.",
+    "Hola, qué bueno que te acercas. Estoy aquí para ayudarte de forma sencilla y segura.",
+    "¡Bienvenido! No te preocupes por los trámites digitales, yo te guiaré con paciencia.",
+    "Hola, un placer saludarte. Vamos a resolver tu solicitud de manera muy fácil y clara."
 ]
 
 def get_groq_response(messages_history: list, session_id: str = "default_session") -> str:
@@ -33,15 +33,12 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
     
     state = SESSION_STATES[session_id]
     slots = state["slots"]
-    last_msg = messages_history[-1].content if messages_history else ""
+    last_msg = messages_history[-1].content.strip() if messages_history else ""
     msg_lower = last_msg.lower()
 
-    # 1. Extracción determinista de slots basada en palabras clave del mensaje del usuario
-    if not slots["genero"]:
-        if any(w in msg_lower for w in ['hombre', 'masculino', 'varón', 'varon']):
-            slots["genero"] = "Hombre"
-        elif any(w in msg_lower for w in ['mujer', 'femenino']):
-            slots["genero"] = "Mujer"
+    # Detección heurística complementaria para asegurar extracción de datos simples
+    if not slots["genero"] and any(w in msg_lower for w in ['hombre', 'masculino', 'varón', 'varon', 'mujer', 'femenino']):
+        slots["genero"] = "Hombre" if any(w in msg_lower for w in ['hombre', 'masculino', 'varón', 'varon']) else "Mujer"
 
     if not slots["estado"]:
         estados_mx = ['hidalgo', 'tlaxcala', 'puebla', 'cdmx', 'mexico', 'méxico', 'veracruz', 'oaxaca', 'jalisco', 'nuevo leon', 'guanajuato']
@@ -50,16 +47,14 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
                 slots["estado"] = est.capitalize()
                 break
 
-    if not slots["fecha"]:
-        meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
-        if any(m in msg_lower for m in meses) or any(yr in msg_lower for yr in ['200', '199', '198', '197', '196']):
-            slots["fecha"] = last_msg
+    if not slots["fecha"] and (any(m in msg_lower for m in ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']) or any(yr in msg_lower for yr in ['200', '199', '198', '197', '196'])):
+        slots["fecha"] = last_msg
 
-    if not slots["nombre"]:
-        if any(w in msg_lower for w in ['me llamo', 'soy', 'nombre es']) or (len(last_msg.split()) >= 2 and not any(w in msg_lower for w in ['curp', 'hombre', 'mujer', 'hidalgo', 'puebla', 'tlaxcala'])):
+    if not slots["nombre"] and len(last_msg.split()) >= 2 and msg_lower not in ['curp', 'hombre', 'mujer', 'claro', 'sí', 'si']:
+        if not slots["nombre"] and not any(w in msg_lower for w in ['hidalgo', 'puebla', 'tlaxcala']):
             slots["nombre"] = last_msg
 
-    # 2. Determinar estrictamente cuál es el siguiente campo faltante
+    # Determinar qué campo falta por recolectar
     missing_slot = None
     if not slots["nombre"]:
         missing_slot = "nombre completo"
@@ -72,38 +67,46 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
 
     greeting = random.choice(GREETINGS)
 
-    # Si ya se tienen todos los datos cubiertos
-    if not missing_slot:
-        return f"{greeting} He registrado toda tu información con éxito (Nombre: {slots['nombre']}, Fecha: {slots['fecha']}, Estado: {slots['estado']}, Género: {slots['genero']}). Estoy procediendo a consultar tu CURP en gob.mx de forma automática."
+    # Si la API Key de Groq no está disponible, activar respaldo inteligente offline
+    if not api_key or "invalid" in api_key.lower():
+        if not missing_slot:
+            return f"{greeting} He reunido todos tus datos correctamente: {slots}. Procederé a consultar tu CURP."
+        prompt_map = {
+            "nombre": "por favor dime tu nombre completo.",
+            "fecha": "por favor indícame tu fecha de nacimiento exacta.",
+            "estado": "por favor dime en qué estado de la República naciste.",
+            "genero": "por favor confírmame tu género (hombre o mujer)."
+        }
+        return f"{greeting} Entendido. Para continuar con tu trámite de CURP, {prompt_map[missing_slot]}"
 
-    # 3. Construir prompt directivo con estado absoluto para Groq
+    # Prompt directivo estricto para Llama 3 en Groq Cloud
     system_prompt = (
-        "Eres GovAssist Core, un asistente virtual empático, cálido y paciente para adultos mayores de 50 años en México. "
-        f"Trámite actual: CURP. Datos recolectados hasta el momento: {slots}. "
-        f"El ÚNICO dato que falta obligatoriamente pedir en este turno es: {missing_slot}. "
-        "INSTRUCCIONES ESTRICTAS:\n"
-        f"1. Inicia la respuesta con un tono humano y accesible.\n"
-        "2. Reconoce brevemente lo que el usuario acaba de escribir.\n"
-        f"3. Pide ÚNICAMENTE el siguiente dato faltante: '{missing_slot}'. NUNCA vuelvas a pedir información que ya esté recolectada.\n"
-        "4. Mantén las respuestas breves y claras."
+        "Eres GovAssist Core, un asistente virtual extremadamente paciente, cálido y empático para adultos mayores de 50 años en México.\n"
+        "Estás guiando al usuario en el trámite de consulta de su CURP en gob.mx.\n"
+        f"ESTADO ACTUAL DE DATOS RECOLECTADOS:\n- Nombre: {slots['nombre'] or 'FALTA'}\n- Fecha de nacimiento: {slots['fecha'] or 'FALTA'}\n- Estado: {slots['estado'] or 'FALTA'}\n- Género: {slots['genero'] or 'FALTA'}\n\n"
+        f"EL ÚNICO DATO QUE DEBES PEDIR O CONFIRMAR EN ESTE TURNO ES: {missing_slot if missing_slot else 'NINGUNO (Datos completos)'}.\n\n"
+        "INSTRUCCIONES CLAVE:\n"
+        "1. Inicia siempre con un saludo cálido, humano y COMPLETAMENTE DIFERENTE al de mensajes anteriores (cero repeticiones robóticas).\n"
+        "2. Reconoce brevemente la respuesta del usuario (aunque diga 'claro' o 'sí', acéptalo con amabilidad).\n"
+        "3. Si falta algún dato, pide ÚNICAMENTE el siguiente dato faltante de forma natural. NUNCA repitas preguntas sobre datos que ya tienen valor registrado.\n"
+        "4. Si ya están los 4 datos completos, felicita al usuario e indícale que estás consultando gob.mx."
     )
 
     formatted_messages = [{"role": "system", "content": system_prompt}]
     for msg in messages_history:
         formatted_messages.append({"role": getattr(msg, "role", "user"), "content": getattr(msg, "content", str(msg))})
 
-    if not api_key or "invalid" in api_key.lower():
-        return f"{greeting} Para continuar con tu trámite de CURP, por favor dime tu {missing_slot}."
-
     try:
         client = Groq(api_key=api_key)
         chat_completion = client.chat.completions.create(
             model="llama3-70b-8192",
             messages=formatted_messages,
-            temperature=0.4,
-            max_tokens=300,
+            temperature=0.6,
+            max_tokens=350,
         )
         return chat_completion.choices[0].message.content
     except Exception as e:
         logger.error(f"Error al invocar Groq Cloud LPU: {str(e)}")
-        return f"{greeting} Para continuar con tu CURP, por favor dime tu {missing_slot}."
+        if not missing_slot:
+            return f"{greeting} ¡Excelente! He recopilado toda tu información para la CURP."
+        return f"{greeting} Para continuar con tu trámite de CURP, por favor dime tu {missing_slot}."
