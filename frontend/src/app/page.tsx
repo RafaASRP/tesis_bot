@@ -1,16 +1,15 @@
-import ChatContainer from "@/components/ChatContainer";
+import VoiceAssistantUI from "@/components/VoiceAssistantUI";
 
 export default function Home() {
   return (
-    <div className="w-full flex flex-col items-center justify-center space-y-6">
-      <section className="text-center max-w-2xl px-4">
-        <h2 className="text-3xl font-bold text-gov-primary mb-3">Asistencia de Trámites por Voz</h2>
-        <p className="text-gov-muted text-lg leading-relaxed">
-          Presione el ícono del micrófono rojo para hablar, o escriba su duda en la caja inferior. 
-          GovAssist leerá las respuestas en voz alta para usted.
+    <div className="w-full flex flex-col items-center justify-center space-y-10 py-10">
+      <section className="text-center max-w-3xl px-4">
+        <h2 className="text-4xl font-bold text-gov-primary mb-4">GovAssist Core</h2>
+        <p className="text-gov-muted text-xl leading-relaxed">
+          Asistente virtual de trámites federales por voz. 
         </p>
       </section>
-      <ChatContainer />
+      <VoiceAssistantUI />
     </div>
   );
 }
