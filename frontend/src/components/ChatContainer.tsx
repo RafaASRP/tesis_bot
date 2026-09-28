@@ -1,8 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
-import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
-import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
+import React, { useState, useRef, useEffect } from 'react';
 import { sendChatMessage } from '../lib/api';
 
 interface Message {
@@ -13,105 +11,83 @@ interface Message {
 
 export default function ChatContainer() {
   const [messages, setMessages] = useState<Message[]>([
-    { 
-      id: 'welcome', 
-      text: 'Hola. Soy GovAssist, tu asistente virtual. Puedo ayudarte con tu CURP, Acta de Nacimiento, Semanas Cotizadas, Pasaporte o Cédula Profesional. Toca el micrófono para hablar o escribe tu duda.', 
-      sender: 'bot' 
-    }
+    { id: '1', text: 'Hola, soy GovAssist Core. ¿En qué trámite federal te puedo ayudar hoy (CURP, Acta, IMSS, Pasaporte, Cédula)?', sender: 'bot' }
   ]);
   const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const { startListening, stopListening, isListening, transcript, supported: sttSupported } = useSpeechRecognition();
-  const { speak, stop: stopSpeaking } = useSpeechSynthesis();
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, loading]);
 
-  useEffect(() => {
-    if (transcript) setInput(transcript);
-  }, [transcript]);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || loading) return;
 
-  const handleSend = async (textToSend: string) => {
-    if (!textToSend.trim()) return;
-
-    const userMsg: Message = { id: Date.now().toString(), text: textToSend, sender: 'user' };
+    const userMsg: Message = { id: Date.now().toString(), text: input, sender: 'user' };
     setMessages(prev => [...prev, userMsg]);
+    const currentInput = input;
     setInput('');
-    setIsLoading(true);
-    stopSpeaking(); 
+    setLoading(true);
 
     try {
-      const response = await sendChatMessage({ message: textToSend });
-      const botMsg: Message = { id: (Date.now() + 1).toString(), text: response.reply, sender: 'bot' };
+      const res = await sendChatMessage({ message: currentInput });
+      const botMsg: Message = { id: (Date.now() + 1).toString(), text: res.reply, sender: 'bot' };
       setMessages(prev => [...prev, botMsg]);
-      speak(response.reply); 
-    } catch (error) {
-      const errorMsg: Message = { id: (Date.now() + 1).toString(), text: 'Lo siento, tuve un problema de red. ¿Podrías intentar de nuevo?', sender: 'bot' };
+    } catch (_error) {
+      const errorMsg: Message = { id: (Date.now() + 1).toString(), text: 'Error de comunicación con el servidor backend.', sender: 'bot' };
       setMessages(prev => [...prev, errorMsg]);
-      speak(errorMsg.text);
     } finally {
-      setIsLoading(false);
-      stopListening(); 
+      setLoading(false);
     }
   };
 
-  const toggleMic = () => {
-    if (isListening) stopListening();
-    else startListening();
-  };
-
   return (
-    <div className="w-full max-w-3xl bg-gov-surface shadow-xl rounded-2xl flex flex-col h-[70vh] border-2 border-gov-border">
-      <div className="flex-1 p-6 overflow-y-auto space-y-6" role="log" aria-live="polite">
-        {messages.map((msg) => (
-          <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`p-4 max-w-[85%] rounded-2xl text-lg shadow-sm ${msg.sender === 'user' ? 'bg-gov-focus text-white rounded-br-none' : 'bg-gov-background text-gov-text border border-gov-border rounded-bl-none'}`}>
-              {msg.text}
+    <div className="flex flex-col h-[75vh] w-full max-w-4xl mx-auto bg-white dark:bg-slate-800 rounded-3xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+      <div className="bg-[#003B5C] text-white p-4 font-bold text-lg flex items-center justify-between">
+        <span>GovAssist Core — Asistente de Trámites</span>
+        <span className="text-xs bg-emerald-600 px-3 py-1 rounded-full">WCAG 2.1 AA</span>
+      </div>
+      
+      <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        {messages.map((m) => (
+          <div key={m.id} className={`flex ${m.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[80%] p-4 rounded-2xl text-lg font-medium shadow-sm ${
+              m.sender === 'user' 
+                ? 'bg-[#003B5C] text-white rounded-br-none' 
+                : 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-bl-none border border-slate-200 dark:border-slate-600'
+            }`}>
+              {m.text}
             </div>
           </div>
         ))}
-        {isLoading && (
+        {loading && (
           <div className="flex justify-start">
-            <div className="p-4 bg-gov-background border border-gov-border rounded-2xl text-gov-muted animate-pulse text-lg rounded-bl-none">
-              Procesando tu solicitud...
+            <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 animate-pulse">
+              Consultando gob.mx...
             </div>
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="p-4 border-t-2 border-gov-border bg-gov-background rounded-b-2xl flex items-end gap-3">
-        {sttSupported && (
-          <button
-            type="button"
-            onClick={toggleMic}
-            aria-label={isListening ? "Detener micrófono" : "Iniciar micrófono"}
-            className={`h-12 w-12 flex-shrink-0 rounded-full flex items-center justify-center transition-colors focus-visible:ring-4 focus-visible:ring-gov-focus shadow-md ${isListening ? 'bg-gov-error text-white animate-pulse' : 'bg-gov-accent text-white hover:bg-opacity-90'}`}
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
-          </button>
-        )}
-        <input
+      <form onSubmit={handleSubmit} className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 flex gap-3">
+        <input 
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleSend(input)}
-          placeholder="Escribe tu mensaje aquí..."
-          className="flex-1 min-h-[3rem] p-3 border-2 border-gov-border rounded-xl text-lg text-gov-text focus:outline-none focus:border-gov-focus bg-white shadow-inner"
-          aria-label="Caja de texto para mensaje"
+          placeholder="Escribe tu consulta aquí..."
+          className="flex-1 p-4 rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#8A1538]"
         />
-        <button
-          onClick={() => handleSend(input)}
-          disabled={isLoading || !input.trim()}
-          aria-label="Enviar mensaje"
-          className="h-12 px-6 rounded-xl bg-gov-primary text-white font-bold text-lg disabled:opacity-50 transition-opacity focus-visible:ring-4 focus-visible:ring-gov-focus shadow-md flex items-center justify-center"
+        <button 
+          type="submit"
+          disabled={loading || !input.trim()}
+          className="px-8 py-4 bg-[#8A1538] text-white font-bold rounded-2xl hover:bg-[#5a0c24] transition-colors disabled:opacity-50"
         >
           Enviar
         </button>
-      </div>
+      </form>
     </div>
   );
 }

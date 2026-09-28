@@ -1,69 +1,103 @@
 "use client";
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
-export const useSpeechRecognition = () => {
+interface IWindow extends Window {
+  SpeechRecognition?: new () => ISpeechRecognition;
+  webkitSpeechRecognition?: new () => ISpeechRecognition;
+}
+
+interface ISpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  onresult: (event: ISpeechRecognitionEvent) => void;
+  onerror: (event: ISpeechRecognitionErrorEvent) => void;
+  onend: () => void;
+}
+
+interface ISpeechRecognitionEvent {
+  results: {
+    [index: number]: {
+      [index: number]: {
+        transcript: string;
+      };
+    };
+  };
+}
+
+interface ISpeechRecognitionErrorEvent {
+  error: string;
+}
+
+export function useSpeechRecognition() {
   const [isListening, setIsListening] = useState(false);
-  const [transcript, setTranscript] = useState("");
+  const [transcript, setTranscript] = useState('');
   const [supported, setSupported] = useState(false);
-  const [recognition, setRecognition] = useState<any>(null);
+  const [recognitionInstance, setRecognitionInstance] = useState<ISpeechRecognition | null>(null);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      // Soporte multiplataforma para Chrome/Safari
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
+    if (typeof window !== 'undefined') {
+      const clientWindow = window as unknown as IWindow;
+      const SpeechRecognitionAPI = clientWindow.SpeechRecognition || clientWindow.webkitSpeechRecognition;
+      if (SpeechRecognitionAPI) {
         setSupported(true);
-        const rec = new SpeechRecognition();
-        rec.continuous = false;
-        rec.interimResults = true;
-        rec.lang = 'es-MX';
-        setRecognition(rec);
+        const recognition = new SpeechRecognitionAPI();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'es-MX';
+
+        recognition.onresult = (event: ISpeechRecognitionEvent) => {
+          let currentTranscript = '';
+          for (let i = 0; i < Object.keys(event.results).length; i++) {
+            currentTranscript += event.results[i][0].transcript;
+          }
+          setTranscript(currentTranscript);
+        };
+
+        recognition.onerror = (_event: ISpeechRecognitionErrorEvent) => {
+          setIsListening(false);
+        };
+
+        recognition.onend = () => {
+          setIsListening(false);
+        };
+
+        setRecognitionInstance(recognition);
       }
     }
   }, []);
 
   const startListening = useCallback(() => {
-    if (!recognition) return;
-    try {
-      recognition.start();
-      setIsListening(true);
-      setTranscript("");
-      
-      recognition.onresult = (event: any) => {
-        let interimTranscript = '';
-        let finalTranscript = '';
-        
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
-        }
-        // Priorizar el resultado final, hacer fallback al interino (UX en tiempo real)
-        setTranscript(finalTranscript || interimTranscript);
-      };
-
-      recognition.onerror = (event: any) => {
-        console.error("Error de captura STT:", event.error);
-        setIsListening(false);
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-      };
-    } catch (error) {
-      console.error("Error iniciando el micrófono:", error);
-      setIsListening(false);
+    if (recognitionInstance && !isListening) {
+      setTranscript('');
+      try {
+        recognitionInstance.start();
+        setIsListening(true);
+      } catch {
+        // Manejo defensivo
+      }
     }
-  }, [recognition]);
+  }, [recognitionInstance, isListening]);
 
   const stopListening = useCallback(() => {
-    if (!recognition) return;
-    recognition.stop();
-    setIsListening(false);
-  }, [recognition]);
+    if (recognitionInstance && isListening) {
+      try {
+        recognitionInstance.stop();
+      } catch {
+        // Manejo defensivo
+      }
+      setIsListening(false);
+    }
+  }, [recognitionInstance, isListening]);
 
-  return { startListening, stopListening, isListening, transcript, supported };
-};
+  return {
+    startListening,
+    stopListening,
+    isListening,
+    transcript,
+    supported,
+  };
+}
