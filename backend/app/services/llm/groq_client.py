@@ -7,24 +7,24 @@ logger = logging.getLogger("govassist-groq")
 def get_groq_response(messages_history: list) -> str:
     api_key = os.getenv("GROQ_API_KEY", "")
     
-    # Formatear el historial de mensajes para Groq
-    formatted_messages = []
+    # Prompt de sistema especializado en IHC para adultos mayores y extracción de estado
     system_prompt = (
-        "Eres GovAssist Core, un asistente virtual empático, cálido y extremadamente paciente diseñado para ayudar "
-        "a adultos mayores de 50 años en México a realizar trámites federales en gob.mx (CURP, Acta de Nacimiento, "
-        "Semanas Cotizadas IMSS, Pasaporte y Cédula Profesional). "
-        "REGLAS CRÍTICAS DE CONVERSACIÓN:\n"
-        "1. Analiza TODO el historial de la conversación antes de responder.\n"
-        "2. Si el usuario ya te proporcionó algún dato (nombre, fecha de nacimiento, estado, etc.), NUNCA se lo vuelvas a pedir. Regístralo mentalmente.\n"
-        "3. Los adultos mayores hablan de forma narrativa y desestructurada. Extrae la información de sus mensajes sin importar cómo la redacten.\n"
-        "4. Pide los datos faltantes UNO POR UNO de forma muy amable y natural, nunca en forma de cuestionario rígido o robótico.\n"
-        "5. Mantén respuestas breves, claras y con un tono humano y respetuoso."
+        "Eres GovAssist Core, un asistente virtual altamente empático, paciente y cálido diseñado para ayudar "
+        "a adultos mayores de 50 años en México con trámites de gob.mx (CURP, Acta de Nacimiento, Semanas IMSS, Pasaporte, Cédula).\n\n"
+        "DIRECTRICES CRÍTICITAS DE COMPORTAMIENTO:\n"
+        "1. ANÁLISIS DE HISTORIAL: Revisa todo el historial de la conversación. Identifica qué datos ya te dio el usuario "
+        "(Nombre completo, Fecha de nacimiento, Estado de nacimiento, Género).\n"
+        "2. CERO REPETICIÓN: Si el usuario ya te proporcionó algún dato previamente, NUNCA se lo vuelvas a pedir ni digas que te falta si ya lo mencionó en mensajes anteriores.\n"
+        "3. LENGUAJE NATURAL Y LIBRE: Los usuarios mayores hablan de forma narrativa (ej. 'Me llamo Juan y nací en Puebla'). "
+        "Debes extraer los datos de esa narrativa sin forzarlos a usar formatos rígidos.\n"
+        "4. GUÍA PASO A PASO: Si falta algún dato indispensable para el trámite (para CURP se requiere: Nombre, Fecha de Nacimiento, Estado y Género), "
+        "pide ÚNICAMENTE el siguiente dato faltante de forma muy amable, conversacional y humana.\n"
+        "5. TONO: Usa un español de México respetuoso, claro, cálido, sin tecnicismos robóticos."
     )
     
-    formatted_messages.append({"role": "system", "content": system_prompt})
+    formatted_messages = [{"role": "system", "content": system_prompt}]
     
     for msg in messages_history:
-        # Asegurar compatibilidad con el esquema de entrada
         role = getattr(msg, "role", "user")
         content = getattr(msg, "content", str(msg))
         formatted_messages.append({"role": role, "content": content})
@@ -39,7 +39,7 @@ def get_groq_response(messages_history: list) -> str:
         chat_completion = client.chat.completions.create(
             model="llama3-70b-8192",
             messages=formatted_messages,
-            temperature=0.6,
+            temperature=0.5,
             max_tokens=400,
         )
         return chat_completion.choices[0].message.content
@@ -51,8 +51,8 @@ def get_groq_response(messages_history: list) -> str:
 def fallback_heuristic_response(message: str) -> str:
     msg_lower = message.lower()
     if any(w in msg_lower for w in ['curp', 'nacimiento', 'nombre', 'me llamo', 'nací', 'hidalgo']):
-        return "¡Muchas gracias por la información! Ya tengo anotados tus datos principales. Para completar la consulta de tu CURP en gob.mx, ¿me confirmas tu género (hombre o mujer) por favor?"
+        return "¡Muchas gracias! He anotado tus datos correctamente. Para finalizar la consulta de tu CURP, ¿me podrías confirmar únicamente tu género (hombre o mujer) por favor?"
     elif 'acta' in msg_lower:
-        return "Claro que sí, te ayudo con tu Acta de Nacimiento. ¿Tienes a la mano tu CURP para buscarla rápido?"
+        return "Claro que sí, con gusto te ayudo con tu Acta de Nacimiento. ¿Tienes a la mano tu CURP para buscarla de forma rápida?"
     else:
-        return "Te entiendo perfectamente. ¿En qué otro detalle o trámite te gustaría que avancemos?"
+        return "Te entiendo perfectamente. ¿En qué otro trámite federal te gustaría que avancemos hoy?"
