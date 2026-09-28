@@ -1,25 +1,21 @@
 import uvicorn
+import os
 import logging
-from app.core.config import settings
 
 logging.basicConfig(
-    level=logging.INFO, 
+    level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s"
 )
-logger = logging.getLogger("govassist-core-runner")
 
 def main():
-    # Extracción segura con getattr para evitar caídas si hay lag en la propagación de variables
-    env_mode = getattr(settings, "ENVIRONMENT", "production")
-    logger.info(f"Iniciando GovAssist Core (Backend) en entorno: {env_mode}")
-    logger.info("Motor ASGI: Uvicorn 0.30.1 | Framework: FastAPI 0.111.0")
+    port = int(os.environ.get("PORT", 10000))
+    logging.info(f"Iniciando GovAssist Core (Backend) en puerto: {port}")
     
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
-        port=10000,
-        reload=False,  # Desactivado obligatoriamente para producción (evita colapsos de memoria)
-        workers=1,     # Límite a 1 worker para estabilizar la instancia
+        port=port,
+        reload=False,
         proxy_headers=True,
         forwarded_allow_ips="*"
     )
