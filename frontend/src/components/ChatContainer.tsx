@@ -35,7 +35,7 @@ export default function ChatContainer() {
       const res = await sendChatMessage({ message: currentInput });
       const botMsg: Message = { id: (Date.now() + 1).toString(), text: res.reply, sender: 'bot' };
       setMessages(prev => [...prev, botMsg]);
-    } catch (_error) {
+    } catch {
       const errorMsg: Message = { id: (Date.now() + 1).toString(), text: 'Error de comunicación con el servidor backend.', sender: 'bot' };
       setMessages(prev => [...prev, errorMsg]);
     } finally {

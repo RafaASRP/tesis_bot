@@ -14,7 +14,7 @@ interface ISpeechRecognition extends EventTarget {
   start: () => void;
   stop: () => void;
   onresult: (event: ISpeechRecognitionEvent) => void;
-  onerror: (event: ISpeechRecognitionErrorEvent) => void;
+  onerror: () => void;
   onend: () => void;
 }
 
@@ -26,10 +26,6 @@ interface ISpeechRecognitionEvent {
       };
     };
   };
-}
-
-interface ISpeechRecognitionErrorEvent {
-  error: string;
 }
 
 export function useSpeechRecognition() {
@@ -57,7 +53,7 @@ export function useSpeechRecognition() {
           setTranscript(currentTranscript);
         };
 
-        recognition.onerror = (_event: ISpeechRecognitionErrorEvent) => {
+        recognition.onerror = () => {
           setIsListening(false);
         };
 

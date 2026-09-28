@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
 import { sendChatMessage } from '../lib/api';
@@ -60,23 +60,7 @@ export default function VoiceAssistantUI() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, transcript, isProcessing]);
 
-  useEffect(() => {
-    if (isListening && transcript) {
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = setTimeout(() => {
-        const currentText = transcript.trim();
-        if (currentText.length > 0 && currentText !== lastProcessedRef.current && !isProcessing) {
-          stopListening();
-          procesarPeticionBackend(currentText);
-        }
-      }, 2500);
-    }
-    return () => {
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-    };
-  }, [transcript, isListening, isProcessing, stopListening]);
-
-  const procesarPeticionBackend = async (texto: string) => {
+  const procesarPeticionBackend = useCallback(async (texto: string) => {
     if (!texto.trim()) return;
     
     setIsProcessing(true);
@@ -96,14 +80,30 @@ export default function VoiceAssistantUI() {
         setMessages(prev => [...prev, { id: Date.now().toString(), text: response.reply, sender: 'bot' }]);
         speak(response.reply);
       }
-    } catch (error) {
-      const errorMsg = "Tuve un problema de conexión con el servidor. Asegúrate de tener activo el backend de Python con FastAPI.";
+    } catch {
+      const errorMsg = "Tuve un problema de conexión con el servidor. Asegúrate de tener activo el backend con FastAPI.";
       setMessages(prev => [...prev, { id: Date.now().toString(), text: errorMsg, sender: 'bot' }]);
       speak(errorMsg);
     } finally {
       setIsProcessing(false);
     }
-  };
+  }, [stopSpeaking, speak]);
+
+  useEffect(() => {
+    if (isListening && transcript) {
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = setTimeout(() => {
+        const currentText = transcript.trim();
+        if (currentText.length > 0 && currentText !== lastProcessedRef.current && !isProcessing) {
+          stopListening();
+          procesarPeticionBackend(currentText);
+        }
+      }, 2500);
+    }
+    return () => {
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    };
+  }, [transcript, isListening, isProcessing, stopListening, procesarPeticionBackend]);
 
   const handleMicToggle = () => {
     if (isSpeaking) stopSpeaking();
@@ -169,7 +169,6 @@ export default function VoiceAssistantUI() {
 
       <div className="w-full flex flex-col lg:grid lg:grid-cols-12 gap-8 lg:h-[75vh] px-4 md:px-0">
         
-        {/* PANEL DE HISTORIAL: Ocupa el último lugar en móviles (order-last) y el primero en escritorio (lg:order-first) */}
         <div className={`order-last lg:order-first lg:col-span-8 rounded-[2rem] shadow-xl border flex flex-col overflow-hidden transition-colors duration-500 h-[60vh] lg:h-full
           ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
           
@@ -219,7 +218,6 @@ export default function VoiceAssistantUI() {
           </div>
         </div>
 
-        {/* PANEL DE INTERACCIÓN: Ocupa los primeros lugares en móviles */}
         <div className="order-first lg:order-last lg:col-span-4 flex flex-col gap-6 w-full">
           
           <div className={`w-full py-8 md:py-0 md:min-h-[200px] rounded-[2rem] shadow-xl border flex flex-col items-center justify-center relative overflow-hidden transition-colors duration-500 
