@@ -9,11 +9,11 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
 
-# Configuración obligatoria de CORS para permitir peticiones desde Vercel
+# Configuración corregida de CORS para producción (Vercel -> Render)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permite peticiones desde cualquier origen en producción
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,  # Requerido en False cuando allow_origins es ["*"] para evitar bloqueos del navegador
     allow_methods=["*"],
     allow_headers=["*"],
 )
