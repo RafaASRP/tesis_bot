@@ -86,7 +86,7 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
     if any(w in msg_lower for w in ['cancelar', 'reiniciar', 'salir', 'borrar', 'empezar de nuevo']):
         if session_id in SESSION_STATES:
             del SESSION_STATES[session_id]
-        return "He purgado tu sesión desde cero por seguridad. ¿En qué trámite federal te ayudo hoy (CURP, Acta, IMSS, Pasaporte, Cédula)?"
+        return "He reiniciado la consulta por seguridad. ¿En qué trámite federal te puedo ayudar hoy (CURP, Acta, IMSS, Pasaporte, Cédula)?"
 
     # 2. INICIALIZACIÓN DE ESTADO EFÍMERO
     if session_id not in SESSION_STATES:
@@ -98,11 +98,12 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
     if state.status == "confirming":
         afirmativas = [
             'sí', 'si', 'claro', 'correcto', 'está bien', 'esta bien', 'adelante', 
-            'confirmo', 'ok', 'es correcta', 'si es correcta', 'así es', 'asi es'
+            'confirmo', 'ok', 'es correcta', 'si es correcta', 'así es', 'asi es', 'todo es correcto'
         ]
         negativas = ['no', 'mal', 'incorrecto', 'corregir', 'cambiar', 'error']
         
         if any(w in msg_lower for w in afirmativas):
+            state.status = "confirmed"
             summary = (
                 "¡Datos confirmados exitosamente!\n\n"
                 f"• Nombres: {state.slots.nombres}\n"
@@ -111,16 +112,15 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
                 f"• Fecha de Nacimiento: {state.slots.fecha}\n"
                 f"• Estado: {state.slots.estado}\n"
                 f"• Género: {state.slots.genero}\n\n"
-                "Conectando de forma segura con gob.mx mediante automatización RPA... Tus datos han sido eliminados de mi memoria temporal."
+                "Estamos conectando con el portal oficial de gob.mx para realizar tu consulta. Por favor, permanece atento a la pantalla."
             )
-            del SESSION_STATES[session_id]
             return summary
         elif any(w in msg_lower for w in negativas):
             state.status = "collecting"
             state.slots = CurpSlots()
-            return "Entendido. He borrado todo para corregirlo. Empecemos de nuevo: por favor, dime tu nombre o nombres de pila (sin apellidos)."
+            return "Entendido. Vamos a corregir tus datos. Empecemos de nuevo: por favor, dime tu nombre o nombres de pila (sin apellidos)."
         else:
-            return "Necesito tu confirmación explícita. ¿Son correctos los datos mostrados en pantalla? (Responde Sí o No)"
+            return "Necesito tu confirmación para continuar. ¿Son correctos los datos que ves en pantalla? (Responde Sí o No)"
 
     # 4. EXTRACCIÓN NER JSON Y HEURÍSTICA CANÓNICA
     if state.status == "collecting":
@@ -148,7 +148,6 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
                 if not state.slots.primer_apellido and extracted.get("primer_apellido"): state.slots.primer_apellido = str(extracted["primer_apellido"]).title()
                 if not state.slots.segundo_apellido and extracted.get("segundo_apellido"): state.slots.segundo_apellido = str(extracted["segundo_apellido"]).title()
                 
-                # Normalización de fecha extraída por NER
                 if not state.slots.fecha and extracted.get("fecha"):
                     cleaned_date = clean_birth_date(str(extracted["fecha"]))
                     if cleaned_date:
@@ -181,7 +180,7 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
                 if palabras:
                     state.slots.segundo_apellido = " ".join(palabras)
 
-        # Extracción y limpieza determinista de fecha sobre last_msg
+        # Extracción determinista de fecha sobre el mensaje directo
         if not state.slots.fecha:
             parsed_date = clean_birth_date(last_msg)
             if parsed_date and (any(m in parsed_date.lower() for m in ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']) or any(c.isdigit() for c in parsed_date)):
@@ -204,7 +203,7 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
                     state.slots.estado = est.title()
                     break
 
-    # 5. ORDEN ESTRICTO SECUENCIAL (Petición sin ejemplos superfluos)
+    # 5. ORDEN ESTRICTO SECUENCIAL
     missing_prompt = ""
     if not state.slots.nombres:
         missing_prompt = "tu nombre o nombres de pila (sin apellidos)"
@@ -234,7 +233,7 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
             "¿Confirmas que esta información es correcta para proceder? (Responde Sí o No)"
         )
 
-    # 6. RESPUESTA CREADA POR CÓDIGO (Cero saludos repetidos garantizado)
+    # 6. RESPUESTA DETERMINISTA SIN SALUDOS REPETITIVOS
     prefix = ""
     if not state.greeted:
         prefix = "¡Hola! Qué gusto saludarte. Te guiaré paso a paso con tu trámite. "
