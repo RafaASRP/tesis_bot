@@ -1,7 +1,6 @@
 import os
 import json
 import logging
-import random
 from typing import Dict
 from pydantic import BaseModel, Field
 from groq import Groq
@@ -22,7 +21,7 @@ class SessionState(BaseModel):
     greeted: bool = False
     slots: CurpSlots = Field(default_factory=CurpSlots)
 
-# Almacén efímero (Zero-Persistence en RAM controlada por sesión)
+# Almacén efímero (Zero-Persistence en RAM controlada por session_id)
 SESSION_STATES: Dict[str, SessionState] = {}
 
 def get_groq_response(messages_history: list, session_id: str = "default_session") -> str:
@@ -58,8 +57,9 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
                 f"• Fecha de Nacimiento: {state.slots.fecha}\n"
                 f"• Estado: {state.slots.estado}\n"
                 f"• Género: {state.slots.genero}\n\n"
-                "Conectando de forma segura con gob.mx mediante automatización RPA... Tus datos han sido eliminados permanentemente de mi memoria temporal."
+                "Conectando de forma segura con gob.mx mediante automatización RPA... Tus datos han sido eliminados de mi memoria temporal."
             )
+            # Purga inmediata al confirmar por privacidad
             del SESSION_STATES[session_id]
             return summary
         elif any(w in msg_lower for w in negativas):
@@ -69,9 +69,8 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
         else:
             return "Necesito tu confirmación explícita. ¿Son correctos los datos mostrados en pantalla? (Responde Sí o No)"
 
-    # 4. EXTRACCIÓN NER JSON (Filtro de "Paja" y Separación de Nombre)
+    # 4. EXTRACCIÓN NER JSON (Filtro de Paja y Separación de Nombres)
     if state.status == "collecting":
-        client = None
         if api_key and "invalid" not in api_key.lower():
             try:
                 client = Groq(api_key=api_key)
@@ -91,6 +90,7 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
                 )
                 extracted = json.loads(extract_res.choices[0].message.content)
                 
+                # Asignar solo a las ranuras vacías
                 if not state.slots.nombres and extracted.get("nombres"): state.slots.nombres = str(extracted["nombres"]).title()
                 if not state.slots.primer_apellido and extracted.get("primer_apellido"): state.slots.primer_apellido = str(extracted["primer_apellido"]).title()
                 if not state.slots.segundo_apellido and extracted.get("segundo_apellido"): state.slots.segundo_apellido = str(extracted["segundo_apellido"]).title()
@@ -100,18 +100,16 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
             except Exception as e:
                 logger.error(f"Error NER JSON: {str(e)}")
 
-        # Respaldo Heurístico Local (Por si falla la API de Groq o hay demasiada paja)
+        # Respaldo Heurístico Local por si Groq falla o hay timeout
         if not state.slots.nombres and not state.slots.primer_apellido:
             palabras = [p.title() for p in last_msg.split() if p.lower() not in ['hola', 'me', 'llamo', 'soy', 'quiero', 'curp', 'tramite', 'por', 'favor']]
             if len(palabras) >= 2:
                 if len(palabras) == 2:
                     state.slots.nombres, state.slots.primer_apellido = palabras[0], palabras[1]
-                elif len(palabras) == 3:
-                    state.slots.nombres, state.slots.primer_apellido, state.slots.segundo_apellido = palabras[0], palabras[1], palabras[2]
-                elif len(palabras) >= 4:
-                    state.slots.nombres = f"{palabras[0]} {palabras[1]}"
-                    state.slots.primer_apellido = palabras[2]
-                    state.slots.segundo_apellido = " ".join(palabras[3:])
+                elif len(palabras) >= 3:
+                    state.slots.nombres = palabras[0]
+                    state.slots.primer_apellido = palabras[1]
+                    state.slots.segundo_apellido = " ".join(palabras[2:])
 
         if not state.slots.genero and any(w in msg_lower for w in ['hombre', 'masculino', 'varón', 'varon', 'mujer', 'femenino']):
             state.slots.genero = "Hombre" if any(w in msg_lower for w in ['hombre', 'masculino', 'varón', 'varon']) else "Mujer"
@@ -159,7 +157,6 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
         state.greeted = True
     else:
         acks = ["Perfecto. ", "Muy bien. ", "Anotado. ", "Gracias. "]
-        # Seleccionar confirmación pseudo-aleatoria basada en el input
         prefix = acks[len(last_msg) % len(acks)]
 
     return f"{prefix}Por favor, dime {missing_prompt}."
