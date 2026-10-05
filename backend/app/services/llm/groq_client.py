@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import logging
 from typing import Dict
@@ -21,8 +22,47 @@ class SessionState(BaseModel):
     greeted: bool = False
     slots: CurpSlots = Field(default_factory=CurpSlots)
 
-# Almacén efímero (Zero-Persistence en RAM controlada por session_id)
+# Almacén efímero (Zero-Persistence en RAM controlada por sesión)
 SESSION_STATES: Dict[str, SessionState] = {}
+
+def parse_clean_date(text: str) -> str | None:
+    """
+    Normaliza expresiones de fecha en español extrayendo únicamente día, mes y año.
+    Elimina muletillas como 'nací el día', 'mi fecha es', 'el día', etc.
+    """
+    meses_dict = {
+        'enero': 'enero', 'febrero': 'febrero', 'marzo': 'marzo', 'abril': 'abril',
+        'mayo': 'mayo', 'junio': 'junio', 'julio': 'julio', 'agosto': 'agosto',
+        'septiembre': 'septiembre', 'setiembre': 'septiembre', 'octubre': 'octubre',
+        'noviembre': 'noviembre', 'diciembre': 'diciembre'
+    }
+    meses_regex = '|'.join(meses_dict.keys())
+
+    # Patrón 1: '16 de abril del 2001', '16 de abril de 2001', '16 abril 2001'
+    patron_texto = rf"\b([0-3]?\d)\s*(?:de\s+)?({meses_regex})\s*(?:del?\s+|de\s+|\s+)?(\d{{4}})\b"
+    match_texto = re.search(patron_texto, text, re.IGNORECASE)
+    if match_texto:
+        dia = int(match_texto.group(1))
+        mes = meses_dict[match_texto.group(2).lower()]
+        anio = match_texto.group(3)
+        return f"{dia} de {mes} de {anio}"
+
+    # Patrón 2: formato numérico DD/MM/AAAA o DD-MM-AAAA
+    patron_num = r"\b([0-3]?\d)[/-]([0-1]?\d)[/-](\d{4})\b"
+    match_num = re.search(patron_num, text)
+    if match_num:
+        dia = int(match_num.group(1))
+        mes_num = int(match_num.group(2))
+        anio = match_num.group(3)
+        meses_nombres = [
+            'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+            'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
+        ]
+        if 1 <= mes_num <= 12:
+            return f"{dia} de {meses_nombres[mes_num - 1]} de {anio}"
+        return f"{dia:02d}/{mes_num:02d}/{anio}"
+
+    return None
 
 def get_groq_response(messages_history: list, session_id: str = "default_session") -> str:
     api_key = os.getenv("GROQ_API_KEY", "")
@@ -45,7 +85,10 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
 
     # 3. FASE DE CONFIRMACIÓN (Human-in-the-Loop)
     if state.status == "confirming":
-        afirmativas = ['sí', 'si', 'claro', 'correcto', 'está bien', 'adelante', 'confirmo', 'ok']
+        afirmativas = [
+            'sí', 'si', 'claro', 'correcto', 'está bien', 'esta bien', 'adelante', 
+            'confirmo', 'ok', 'es correcta', 'si es correcta', 'así es', 'asi es'
+        ]
         negativas = ['no', 'mal', 'incorrecto', 'corregir', 'cambiar', 'error']
         
         if any(w in msg_lower for w in afirmativas):
@@ -59,7 +102,6 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
                 f"• Género: {state.slots.genero}\n\n"
                 "Conectando de forma segura con gob.mx mediante automatización RPA... Tus datos han sido eliminados de mi memoria temporal."
             )
-            # Purga inmediata al confirmar por privacidad
             del SESSION_STATES[session_id]
             return summary
         elif any(w in msg_lower for w in negativas):
@@ -69,7 +111,7 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
         else:
             return "Necesito tu confirmación explícita. ¿Son correctos los datos mostrados en pantalla? (Responde Sí o No)"
 
-    # 4. EXTRACCIÓN NER JSON (Filtro de Paja y Separación de Nombres)
+    # 4. EXTRACCIÓN NER JSON Y HEURÍSTICA CANÓNICA
     if state.status == "collecting":
         if api_key and "invalid" not in api_key.lower():
             try:
@@ -77,6 +119,7 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
                 extractor_prompt = (
                     "Eres un extractor NER. Analiza el texto del usuario e ignora la paja conversacional. "
                     "Devuelve ÚNICAMENTE un JSON con las claves: 'nombres', 'primer_apellido', 'segundo_apellido', 'fecha', 'estado', 'genero'. "
+                    "Para 'fecha', extrae ÚNICAMENTE la fecha limpia (ej. '16 de abril de 2001') sin verbos ni prefijos como 'nací el día'. "
                     "Separa el nombre completo OBLIGATORIAMENTE. Si un dato no se menciona, usa null. Capitaliza las palabras."
                 )
                 extract_res = client.chat.completions.create(
@@ -90,11 +133,22 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
                 )
                 extracted = json.loads(extract_res.choices[0].message.content)
                 
-                # Asignar solo a las ranuras vacías
                 if not state.slots.nombres and extracted.get("nombres"): state.slots.nombres = str(extracted["nombres"]).title()
                 if not state.slots.primer_apellido and extracted.get("primer_apellido"): state.slots.primer_apellido = str(extracted["primer_apellido"]).title()
                 if not state.slots.segundo_apellido and extracted.get("segundo_apellido"): state.slots.segundo_apellido = str(extracted["segundo_apellido"]).title()
-                if not state.slots.fecha and extracted.get("fecha"): state.slots.fecha = str(extracted["fecha"])
+                
+                # Normalización estricta de fecha desde JSON
+                if not state.slots.fecha and extracted.get("fecha"):
+                    cleaned_json_date = parse_clean_date(str(extracted["fecha"]))
+                    if cleaned_json_date:
+                        state.slots.fecha = cleaned_json_date
+                    else:
+                        raw_date = str(extracted["fecha"]).strip()
+                        for p in ['naci el dia', 'nací el día', 'naci el', 'nací el', 'el dia', 'el día', 'el']:
+                            if raw_date.lower().startswith(p):
+                                raw_date = raw_date[len(p):].strip()
+                        state.slots.fecha = raw_date.capitalize()
+
                 if not state.slots.estado and extracted.get("estado"): state.slots.estado = str(extracted["estado"]).title()
                 if not state.slots.genero and extracted.get("genero"): state.slots.genero = str(extracted["genero"]).title()
             except Exception as e:
@@ -122,20 +176,30 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
                 if palabras:
                     state.slots.segundo_apellido = " ".join(palabras)
 
+        # Extracción y limpieza determinista de fecha sobre el mensaje del usuario
+        if not state.slots.fecha:
+            parsed_date = parse_clean_date(last_msg)
+            if parsed_date:
+                state.slots.fecha = parsed_date
+
         if not state.slots.genero and any(w in msg_lower for w in ['hombre', 'masculino', 'varón', 'varon', 'mujer', 'femenino']):
             state.slots.genero = "Hombre" if any(w in msg_lower for w in ['hombre', 'masculino', 'varón', 'varon']) else "Mujer"
         
         if not state.slots.estado:
-            estados_mx = ['hidalgo', 'tlaxcala', 'puebla', 'cdmx', 'mexico', 'méxico', 'veracruz', 'oaxaca', 'jalisco', 'nuevo leon', 'guanajuato', 'aguascalientes', 'baja california']
+            estados_mx = [
+                'aguascalientes', 'baja california', 'baja california sur', 'campeche', 'chiapas', 
+                'chihuahua', 'coahuila', 'colima', 'durango', 'guanajuato', 'guerrero', 'hidalgo', 
+                'jalisco', 'mexico', 'méxico', 'cdmx', 'michoacan', 'michoacán', 'morelos', 
+                'nayarit', 'nuevo leon', 'nuevo león', 'oaxaca', 'puebla', 'queretaro', 'querétaro', 
+                'quintana roo', 'san luis potosi', 'san luis potosí', 'sinaloa', 'sonora', 'tabasco', 
+                'tamaulipas', 'tlaxcala', 'veracruz', 'yucatan', 'yucatán', 'zacatecas'
+            ]
             for est in estados_mx:
                 if est in msg_lower:
                     state.slots.estado = est.title()
                     break
-        
-        if not state.slots.fecha and (any(m in msg_lower for m in ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']) or any(yr in msg_lower for yr in ['200', '199', '198', '197', '196'])):
-            state.slots.fecha = last_msg
 
-    # 5. ORDEN ESTRICTO SECUENCIAL (Nombre segmentado)
+    # 5. ORDEN ESTRICTO SECUENCIAL
     missing_prompt = ""
     if not state.slots.nombres:
         missing_prompt = "tu nombre o nombres de pila (sin apellidos)"
@@ -165,7 +229,7 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
             "¿Confirmas que esta información es correcta para proceder? (Responde Sí o No)"
         )
 
-    # 6. RESPUESTA CREADA POR CÓDIGO (Cero saludos repetidos garantizado)
+    # 6. RESPUESTA CREADA POR CÓDIGO (Cero saludos repetidos)
     prefix = ""
     if not state.greeted:
         prefix = "¡Hola! Qué gusto saludarte. Te guiaré paso a paso con tu trámite. "
