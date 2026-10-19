@@ -8,6 +8,40 @@ interface Message {
   content: string;
 }
 
+interface SpeechRecognitionResultItem {
+  transcript: string;
+}
+
+interface SpeechRecognitionResultList {
+  [index: number]: {
+    [index: number]: SpeechRecognitionResultItem;
+  };
+}
+
+interface SpeechRecognitionEvent {
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionInstance extends EventTarget {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onstart: (() => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+}
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance;
+
+interface WindowWithSpeechRecognition extends Window {
+  SpeechRecognition?: SpeechRecognitionConstructor;
+  webkitSpeechRecognition?: SpeechRecognitionConstructor;
+}
+
 export const ChatContainer: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -67,7 +101,7 @@ export const ChatContainer: React.FC = () => {
         throw new Error('Error al conectar con el servidor.');
       }
 
-      const data = await response.json();
+      const data: { response?: string; reply?: string } = await response.json();
       const botReply = data.response || data.reply || 'Disculpa, no pude procesar la respuesta.';
       setMessages((prev) => [...prev, { role: 'assistant', content: botReply }]);
     } catch {
@@ -91,13 +125,13 @@ export const ChatContainer: React.FC = () => {
   };
 
   const toggleListening = () => {
-    const SpeechRecognition =
-      (window as unknown as { SpeechRecognition?: any; webkitSpeechRecognition?: any })
-        .SpeechRecognition ||
-      (window as unknown as { SpeechRecognition?: any; webkitSpeechRecognition?: any })
-        .webkitSpeechRecognition;
+    if (typeof window === 'undefined') return;
 
-    if (!SpeechRecognition) {
+    const speechWindow = window as unknown as WindowWithSpeechRecognition;
+    const SpeechRecognitionClass =
+      speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
+
+    if (!SpeechRecognitionClass) {
       alert('Tu navegador no soporta entrada de voz. Te recomendamos usar Google Chrome.');
       return;
     }
@@ -107,7 +141,7 @@ export const ChatContainer: React.FC = () => {
       return;
     }
 
-    const recognition = new SpeechRecognition();
+    const recognition = new SpeechRecognitionClass();
     recognition.lang = 'es-MX';
     recognition.continuous = false;
     recognition.interimResults = false;
@@ -115,8 +149,8 @@ export const ChatContainer: React.FC = () => {
     recognition.onstart = () => setIsListening(true);
     recognition.onend = () => setIsListening(false);
     recognition.onerror = () => setIsListening(false);
-    recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      const transcript = event.results[0]?.[0]?.transcript;
       if (transcript) {
         sendMessage(transcript);
       }
