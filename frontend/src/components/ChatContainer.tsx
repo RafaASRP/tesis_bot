@@ -31,7 +31,7 @@ export const ChatContainer: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
-  // Detector del evento de conexión para desplegar la ventana emergente
+  // Detector del evento de confirmación para disparar la ventana modal
   useEffect(() => {
     const lastMsg = messages[messages.length - 1];
     if (
@@ -90,7 +90,6 @@ export const ChatContainer: React.FC = () => {
     }
   };
 
-  // Reconocimiento de voz nativo (Web Speech API)
   const toggleListening = () => {
     const SpeechRecognition =
       (window as unknown as { SpeechRecognition?: any; webkitSpeechRecognition?: any })
@@ -136,7 +135,6 @@ export const ChatContainer: React.FC = () => {
             <h2 className="text-xl font-black text-slate-800">Transcurso del Trámite</h2>
           </div>
 
-          {/* Historial de Mensajes */}
           <div className="flex-1 overflow-y-auto space-y-4 pr-2">
             {messages.map((msg, index) => (
               <div
@@ -170,7 +168,6 @@ export const ChatContainer: React.FC = () => {
 
         {/* Columna Derecha: Asistente Activo y Controles de Voz/Texto */}
         <aside className="w-full lg:w-96 flex flex-col gap-6">
-          {/* Card del Asistente */}
           <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl p-6 text-center flex flex-col items-center">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">
               Asistente Activo
@@ -187,9 +184,7 @@ export const ChatContainer: React.FC = () => {
             <p className="text-sm text-slate-500">Apoyo digital para trámites de gob.mx</p>
           </div>
 
-          {/* Controles de Interacción */}
           <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl p-6 flex flex-col items-center gap-4">
-            {/* Botón de Micrófono (Accesibilidad 48x48px+) */}
             <button
               type="button"
               onClick={toggleListening}
@@ -209,7 +204,6 @@ export const ChatContainer: React.FC = () => {
               {isListening ? 'Escuchando tu voz...' : 'Toca el micrófono para hablar'}
             </span>
 
-            {/* Entrada de Texto y Envío */}
             <div className="w-full flex flex-col sm:flex-row gap-2 mt-2">
               <input
                 type="text"
@@ -232,7 +226,6 @@ export const ChatContainer: React.FC = () => {
         </aside>
       </div>
 
-      {/* Ventana Emergente Oficial */}
       <ProcedureModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
