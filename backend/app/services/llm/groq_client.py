@@ -28,7 +28,7 @@ SESSION_STATES: Dict[str, SessionState] = {}
 def clean_birth_date(text: str) -> str | None:
     """
     Normaliza de forma determinista la fecha de nacimiento al formato 'DD de [mes] de AAAA'.
-    Elimina expresiones coloquiales como 'yo nací el', 'nací el día', etc.
+    Elimina expresiones coloquiales como 'yo nací el', 'nací en', etc.
     """
     if not text:
         return None
@@ -66,9 +66,9 @@ def clean_birth_date(text: str) -> str | None:
     # 3. Poda de muletillas conversacionales
     cleaned = text.strip()
     muletillas = [
-        'yo naci el dia', 'yo nací el día', 'yo naci el', 'yo nací el', 'yo naci', 'yo nací',
-        'naci el dia', 'nací el día', 'naci el', 'nací el', 'naci', 'nací',
-        'el dia', 'el día', 'el', 'fecha de nacimiento:', 'fecha:'
+        'yo naci el dia', 'yo nací el día', 'yo naci en', 'yo nací en', 'yo naci el', 'yo nací el', 'yo naci', 'yo nací',
+        'naci el dia', 'nací el día', 'naci en', 'nací en', 'naci el', 'nací el', 'naci', 'nací',
+        'el dia', 'el día', 'el', 'en', 'fecha de nacimiento:', 'fecha:'
     ]
     for mul in muletillas:
         if cleaned.lower().startswith(mul):
@@ -94,15 +94,44 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
     
     state = SESSION_STATES[session_id]
 
-    # 3. FASE DE CONFIRMACIÓN (Human-in-the-Loop)
+    # 3. FASE DE CONFIRMACIÓN (Human-in-the-Loop) CON ANÁLISIS LÉXICO ESTRICTO
     if state.status == "confirming":
-        afirmativas = [
-            'sí', 'si', 'claro', 'correcto', 'está bien', 'esta bien', 'adelante', 
-            'confirmo', 'ok', 'es correcta', 'si es correcta', 'así es', 'asi es', 'todo es correcto'
+        negativas_palabras = [
+            'no', 'mal', 'incorrecto', 'incorrecta', 'incorrectos', 'incorrectas',
+            'corregir', 'cambiar', 'error', 'falso', 'equivocado', 'equivocada', 'espera'
         ]
-        negativas = ['no', 'mal', 'incorrecto', 'corregir', 'cambiar', 'error']
-        
-        if any(w in msg_lower for w in afirmativas):
+        negativas_frases = [
+            'no es correcto', 'no son correctos', 'no es correcta', 'no son correctas',
+            'no esta bien', 'no está bien', 'esta mal', 'está mal', 'no confirmo',
+            'estan mal', 'están mal', 'no coinciden', 'hay un error'
+        ]
+
+        es_negativo = (
+            any(re.search(rf"\b{re.escape(w)}\b", msg_lower) for w in negativas_palabras) or
+            any(f in msg_lower for f in negativas_frases)
+        )
+
+        afirmativas_palabras = [
+            'sí', 'si', 'claro', 'correcto', 'correcta', 'correctos', 'correctas',
+            'adelante', 'confirmo', 'ok', 'proceder', 'exacto', 'exacta'
+        ]
+        afirmativas_frases = [
+            'está bien', 'esta bien', 'es correcta', 'es correcto', 'son correctos',
+            'son correctas', 'si es correcta', 'si es correcto', 'así es', 'asi es',
+            'todo es correcto', 'todo bien', 'de acuerdo'
+        ]
+
+        # La confirmación afirmativa queda bloqueada si existe cualquier negación léxica
+        es_afirmativo = not es_negativo and (
+            any(re.search(rf"\b{re.escape(w)}\b", msg_lower) for w in afirmativas_palabras) or
+            any(f in msg_lower for f in afirmativas_frases)
+        )
+
+        if es_negativo:
+            state.status = "collecting"
+            state.slots = CurpSlots()
+            return "Entendido. He cancelado el envío para corregir los datos. Empecemos de nuevo: por favor, dime tu nombre o nombres de pila (sin apellidos)."
+        elif es_afirmativo:
             state.status = "confirmed"
             summary = (
                 "¡Datos confirmados exitosamente!\n\n"
@@ -115,12 +144,8 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
                 "Estamos conectando con el portal oficial de gob.mx para realizar tu consulta. Por favor, permanece atento a la pantalla."
             )
             return summary
-        elif any(w in msg_lower for w in negativas):
-            state.status = "collecting"
-            state.slots = CurpSlots()
-            return "Entendido. Vamos a corregir tus datos. Empecemos de nuevo: por favor, dime tu nombre o nombres de pila (sin apellidos)."
         else:
-            return "Necesito tu confirmación para continuar. ¿Son correctos los datos que ves en pantalla? (Responde Sí o No)"
+            return "Necesito tu confirmación explícita para continuar. ¿Son correctos los datos que ves en pantalla? (Responde únicamente Sí o No)"
 
     # 4. EXTRACCIÓN NER JSON Y HEURÍSTICA CANÓNICA
     if state.status == "collecting":
@@ -160,7 +185,7 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
 
         # Respaldo Heurístico Local Segmentado para Nombres
         if not state.slots.nombres:
-            palabras = [p.title() for p in last_msg.split() if p.lower() not in ['hola', 'me', 'llamo', 'soy', 'quiero', 'curp', 'tramite', 'por', 'favor', 'necesito', 'un']]
+            palabras = [p.title() for p in last_msg.split() if p.lower() not in ['hola', 'me', 'llamo', 'soy', 'quiero', 'curp', 'tramite', 'por', 'favor', 'necesito', 'un', 'sacar', 'mi']]
             if palabras and not any(w in msg_lower for w in ['curp', 'tramite']):
                 if len(palabras) >= 3 and not state.slots.primer_apellido:
                     state.slots.nombres = palabras[0] if len(palabras) == 3 else f"{palabras[0]} {palabras[1]}"
@@ -180,7 +205,7 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
                 if palabras:
                     state.slots.segundo_apellido = " ".join(palabras)
 
-        # Extracción determinista de fecha sobre el mensaje directo
+        # Extracción determinista de fecha sobre el input directo
         if not state.slots.fecha:
             parsed_date = clean_birth_date(last_msg)
             if parsed_date and (any(m in parsed_date.lower() for m in ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']) or any(c.isdigit() for c in parsed_date)):
@@ -218,7 +243,7 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
     elif not state.slots.genero:
         missing_prompt = "tu género (hombre o mujer)"
 
-    # Transición al completarse los datos
+    # Transición al completar ranuras
     if not missing_prompt:
         state.status = "confirming"
         return (
@@ -233,7 +258,7 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
             "¿Confirmas que esta información es correcta para proceder? (Responde Sí o No)"
         )
 
-    # 6. RESPUESTA DETERMINISTA SIN SALUDOS REPETITIVOS
+    # 6. GENERACIÓN DETERMINISTA (Cero Saludos Repetidos)
     prefix = ""
     if not state.greeted:
         prefix = "¡Hola! Qué gusto saludarte. Te guiaré paso a paso con tu trámite. "
