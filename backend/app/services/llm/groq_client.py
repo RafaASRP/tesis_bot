@@ -27,6 +27,18 @@ class SessionState(BaseModel):
 # Almacén efímero en RAM (LGPDPPSO - Zero Persistence)
 SESSION_STATES: Dict[str, SessionState] = {}
 
+# Vocabulario de control utilizado para no confundir la indicación de un error con un valor real
+META_CORRECTION_WORDS = {
+    "el", "la", "los", "las", "un", "una", "en", "de", "del", "mi", "mis",
+    "error", "errores", "esta", "está", "estan", "están", "es", "son",
+    "dato", "datos", "campo", "campos", "parte", "partes",
+    "nombre", "nombres", "pila", "apellido", "apellidos", "primer", "segundo",
+    "paterno", "materno", "fecha", "nacimiento", "estado", "entidad",
+    "genero", "género", "sexo", "mal", "incorrecto", "incorrecta",
+    "incorrectos", "incorrectas", "corregir", "cambiar", "por", "favor",
+    "tengo", "tiene", "hubo", "hay", "seria", "sería", "fue"
+}
+
 # ==============================================================================
 # MOTORES HEURÍSTICOS DE LIMPIEZA Y NORMALIZACIÓN LÉXICA
 # ==============================================================================
@@ -40,9 +52,11 @@ def clean_given_names(text: str) -> Optional[str]:
         "yo me llamo", "me llamo", "mi nombre es", "yo soy", "soy", 
         "mi nombre de pila es", "nombre de pila:", "nombre completo:", "nombre:",
         "pues me llamo", "hola me llamo", "hola soy", "hola, me llamo", "hola, soy",
-        "mis nombres son", "mi nombre sería", "me pusieron", "es"
+        "mis nombres son", "mi nombre sería", "me pusieron", "es", "me dicen",
+        "de nombre es", "de nombre", "pila:"
     ]
-    for mul in muletillas:
+    sorted_muletillas = sorted(muletillas, key=len, reverse=True)
+    for mul in sorted_muletillas:
         pattern = rf"^{re.escape(mul)}\s*"
         cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE).strip()
     
@@ -50,17 +64,20 @@ def clean_given_names(text: str) -> Optional[str]:
     return cleaned.title() if len(cleaned) >= 2 else None
 
 def clean_paterno(text: str) -> Optional[str]:
-    """Extrae únicamente el apellido paterno eliminando prefijos."""
+    """Extrae únicamente el apellido paterno eliminando prefijos y verbos reflexivos."""
     if not text:
         return None
     cleaned = text.strip()
     muletillas = [
         "mi primer apellido es", "mi apellido paterno es", "el apellido paterno es",
-        "el paterno es", "primer apellido es", "apellido paterno:", "primer apellido:",
-        "paterno:", "apellido:", "es", "tengo el apellido", "de primer apellido",
-        "sería", "pues es", "mi paterno es"
+        "el primer apellido es", "el paterno es", "primer apellido es", "apellido paterno:",
+        "primer apellido:", "paterno:", "mi paterno es", "apellido:", "tengo el apellido",
+        "de primer apellido", "mi apellido es", "me apellido es", "me apellido",
+        "mi apellido", "de apellido", "apellidado", "tengo por apellido",
+        "sería", "pues es", "es"
     ]
-    for mul in muletillas:
+    sorted_muletillas = sorted(muletillas, key=len, reverse=True)
+    for mul in sorted_muletillas:
         pattern = rf"^{re.escape(mul)}\s*"
         cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE).strip()
     
@@ -82,12 +99,14 @@ def clean_materno(text: str) -> Tuple[Optional[str], bool]:
 
     muletillas = [
         "mi segundo apellido es", "mi apellido materno es", "el apellido materno es",
-        "el materno es", "segundo apellido es", "apellido materno:", "segundo apellido:",
-        "materno:", "apellido:", "es", "de segundo apellido", "de parte de mi mama es",
-        "de parte de mi mamá es", "sería", "pues es", "mi materno es"
+        "el segundo apellido es", "el materno es", "segundo apellido es", "apellido materno:",
+        "segundo apellido:", "materno:", "mi materno es", "apellido:", "de segundo apellido",
+        "de parte de mi mama es", "de parte de mi mamá es", "sería", "pues es", "mi materno es",
+        "mi segundo apellido", "segundo apellido", "materno es", "me apellido", "de apellido", "es"
     ]
     raw = text.strip()
-    for mul in muletillas:
+    sorted_muletillas = sorted(muletillas, key=len, reverse=True)
+    for mul in sorted_muletillas:
         pattern = rf"^{re.escape(mul)}\s*"
         raw = re.sub(pattern, "", raw, flags=re.IGNORECASE).strip()
     
@@ -95,13 +114,7 @@ def clean_materno(text: str) -> Tuple[Optional[str], bool]:
     return (raw.title(), False) if len(raw) >= 2 else (None, False)
 
 def clean_birth_date(text: str) -> Optional[str]:
-    """
-    Normaliza de forma determinista la fecha a 'DD de [mes] de AAAA'.
-    Soporta:
-    - Formato natural: '16 de abril del 2001', '7 de marzo del 06'
-    - Formato numérico con separadores o conectores: '07 del 03 del 06', '07/03/2006', '7-3-74'
-    - Años de 2 y 4 dígitos.
-    """
+    """Normaliza de forma determinista la fecha al formato canónico 'DD de [mes] de AAAA'."""
     if not text:
         return None
 
@@ -134,7 +147,7 @@ def clean_birth_date(text: str) -> Optional[str]:
             return 2000 + y if y <= 26 else 1900 + y
         return y
 
-    # 1. Patrón con mes en texto: '07 de marzo del 2006', '7 de marzo del 06'
+    # 1. Patrón con mes en texto
     m_txt = re.search(
         rf"\b([0-3]?\d)\s*(?:de\s+)?({meses_patron})\s*(?:del?\s+|de\s+|\s+)?(\d{{2,4}})\b",
         raw,
@@ -147,7 +160,7 @@ def clean_birth_date(text: str) -> Optional[str]:
         if 1 <= dia <= 31 and 1900 <= anio <= 2026:
             return f"{dia} de {meses_nombres[mes_num - 1]} de {anio}"
 
-    # 2. Patrón numérico con conectores (del, de, /, -, ., espacios): '07 del 03 del 06', '07/03/2006'
+    # 2. Patrón numérico con conectores (del, de, /, -, ., espacios)
     m_num = re.search(
         r"\b([0-3]?\d)\s*(?:del?|de|[\/\-\.\s])\s*([0-1]?\d)\s*(?:del?|de|[\/\-\.\s])\s*(\d{2,4})\b",
         raw,
@@ -160,7 +173,7 @@ def clean_birth_date(text: str) -> Optional[str]:
         if 1 <= dia <= 31 and 1 <= mes_num <= 12 and 1900 <= anio <= 2026:
             return f"{dia} de {meses_nombres[mes_num - 1]} de {anio}"
 
-    # 3. Patrón numérico compacto: '07032006' o '070306'
+    # 3. Patrón numérico compacto
     m_comp = re.search(r"\b([0-3]\d)([0-1]\d)(\d{2,4})\b", raw)
     if m_comp:
         dia = int(m_comp.group(1))
@@ -172,7 +185,7 @@ def clean_birth_date(text: str) -> Optional[str]:
     return None
 
 def clean_mexico_state(text: str) -> Optional[str]:
-    """Normaliza el estado al catálogo oficial de 32 entidades federativas."""
+    """Normaliza el estado al catálogo formal de 32 entidades federativas."""
     if not text:
         return None
     raw = text.lower()
@@ -301,30 +314,43 @@ def detect_field_to_correct(text: str) -> Optional[str]:
 
     return None
 
+def has_substantive_inline_value(text: str) -> bool:
+    """Verifica si el mensaje contiene un valor sustantivo nuevo o solo nombra el campo."""
+    clean = re.sub(r"[.,;:!¡?¿\-\(\)]", " ", text.lower())
+    tokens = [t.strip() for t in clean.split() if t.strip()]
+    substantive = [t for t in tokens if t not in META_CORRECTION_WORDS]
+    return len(substantive) > 0
+
 def extract_inline_correction(field: str, text: str) -> Optional[str]:
-    """Extrae directamente el valor si se incluyó en la indicación de corrección."""
+    """Extrae el nuevo valor únicamente si el usuario lo incluyó de forma sustantiva."""
+    if not has_substantive_inline_value(text):
+        return None
+
     raw = text.strip()
+    m_val = re.search(r"(?:es|sería|seria|debe ser|poner|pon)\s+(.+)$", raw, re.IGNORECASE)
+    candidate = m_val.group(1).strip() if m_val else raw
+
     if field == "segundo_apellido":
-        c_val, has_no = clean_materno(raw)
+        c_val, has_no = clean_materno(candidate)
         if has_no: return "No tiene"
         if c_val and c_val.lower() not in ["segundo apellido", "apellido materno", "materno", "segundo"]:
             return c_val
     elif field == "primer_apellido":
-        c_val = clean_paterno(raw)
+        c_val = clean_paterno(candidate)
         if c_val and c_val.lower() not in ["primer apellido", "apellido paterno", "paterno", "primer", "apellido"]:
             return c_val
     elif field == "nombres":
-        c_val = clean_given_names(raw)
+        c_val = clean_given_names(candidate)
         if c_val and c_val.lower() not in ["nombre", "nombres", "pila"]:
             return c_val
     elif field == "fecha":
-        c_val = clean_birth_date(raw)
+        c_val = clean_birth_date(candidate)
         if c_val: return c_val
     elif field == "estado":
-        c_val = clean_mexico_state(raw)
+        c_val = clean_mexico_state(candidate)
         if c_val: return c_val
     elif field == "genero":
-        c_val = clean_gender(raw)
+        c_val = clean_gender(candidate)
         if c_val: return c_val
 
     return None
@@ -357,13 +383,13 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
             del SESSION_STATES[session_id]
         return "He reiniciado la consulta por seguridad. ¿En qué trámite federal te puedo ayudar hoy (CURP, Acta, IMSS, Pasaporte, Cédula)?"
 
-    # 2. INICIALIZACIÓN DE ESTADO
+    # 2. INICIALIZACIÓN DE ESTADO EFÍMERO
     if session_id not in SESSION_STATES:
         SESSION_STATES[session_id] = SessionState()
     
     state = SESSION_STATES[session_id]
 
-    # REINICIO AL DETECTAR INICIO DE TRÁMITE DE CURP (Previene reusar slots viejos en la misma sesión)
+    # REINICIO AL DETECTAR INICIO DE TRÁMITE DE CURP
     if any(w in msg_lower for w in ['quiero mi curp', 'necesito mi curp', 'sacar mi curp', 'tramitar curp', 'quiero un curp', 'necesito un curp', 'sacar curp']):
         state.slots = CurpSlots()
         state.status = "collecting"
@@ -371,7 +397,7 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
         state.last_prompted_slot = "nombres"
         return "¡Hola! Qué gusto saludarte. Te guiaré paso a paso con tu CURP. Por favor, dime tu nombre o nombres de pila (sin apellidos)."
 
-    # 3. FASE DE CORRECCIÓN SELECTIVA: RECEPCIÓN DEL VALOR
+    # 3. FASE DE CORRECCIÓN SELECTIVA: RECEPCIÓN DEL VALOR CORREGIDO
     if state.status == "correcting_slot":
         field = state.correcting_field
         success = False
@@ -395,14 +421,14 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
                 state.slots.fecha = c_val
                 success = True
             else:
-                return "No logré reconocer la fecha. Por favor indícala indicando día, mes y año (por ejemplo: 7 de marzo de 2006 o 07/03/2006)."
+                return "No logré reconocer la fecha. Por favor indícala indicando día, mes y año (por ejemplo: 17 de abril de 2001 o 17/04/2001)."
         elif field == "estado":
             c_val = clean_mexico_state(last_msg)
             if c_val:
                 state.slots.estado = c_val
                 success = True
             else:
-                return "No reconocí la entidad. Por favor indícame tu estado de nacimiento (por ejemplo: Hidalgo, Tlaxcala, Puebla, CDMX)."
+                return "No reconocí la entidad. Por favor indícame tu estado de nacimiento (por ejemplo: Hidalgo, Tlaxcala, Puebla o CDMX)."
         elif field == "genero":
             c_val = clean_gender(last_msg)
             if c_val:
@@ -421,7 +447,7 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
                 "¿Confirmas que esta información es correcta para proceder? (Responde Sí o No)"
             )
 
-    # 4. FASE DE CORRECCIÓN SELECTIVA: SELECCIÓN DE CAMPO
+    # 4. FASE DE CORRECCIÓN SELECTIVA: IDENTIFICACIÓN DEL CAMPO ERRÓNEO
     if state.status == "asking_correction_slot":
         target_field = detect_field_to_correct(last_msg)
 
@@ -453,13 +479,12 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
                     "nombres": "tu nombre o nombres de pila (sin apellidos) correcto",
                     "primer_apellido": "tu primer apellido (apellido paterno) correcto",
                     "segundo_apellido": "tu segundo apellido (apellido materno) correcto (o dime 'no tengo' si no cuentas con él)",
-                    "fecha": "tu fecha de nacimiento exacta (ej. 7 de marzo de 2006 o 07/03/2006)",
+                    "fecha": "tu fecha de nacimiento exacta (ej. 17 de abril de 2001 o 17/04/2001)",
                     "estado": "en qué estado de la República naciste",
                     "genero": "tu género (hombre o mujer)"
                 }
                 return f"De acuerdo. Por favor, indícame {prompts[target_field]}."
         else:
-            # Fallback inline directo
             date_cand = clean_birth_date(last_msg)
             if date_cand:
                 state.slots.fecha = date_cand
@@ -511,7 +536,7 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
                         "nombres": "tu nombre o nombres de pila (sin apellidos) correcto",
                         "primer_apellido": "tu primer apellido (apellido paterno) correcto",
                         "segundo_apellido": "tu segundo apellido (apellido materno) correcto (o dime 'no tengo' si no cuentas con él)",
-                        "fecha": "tu fecha de nacimiento exacta (ej. 7 de marzo de 2006)",
+                        "fecha": "tu fecha de nacimiento exacta (ej. 17 de abril de 2001)",
                         "estado": "en qué estado de la República naciste",
                         "genero": "tu género (hombre o mujer)"
                     }
@@ -536,9 +561,8 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
         else:
             return "Necesito tu confirmación explícita para continuar. ¿Son correctos los datos que ves en pantalla? (Responde únicamente Sí o No)"
 
-    # 6. EXTRACCIÓN EN RECOLECCIÓN
+    # 6. EXTRACCIÓN HEURÍSTICA Y NER EN FASE DE RECOLECCIÓN
     if state.status == "collecting":
-        # Heurística local de captura según la ranura solicitada
         last_slot = state.last_prompted_slot
         slot_updated = False
 
@@ -563,7 +587,7 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
                 state.slots.fecha = c_fec
                 slot_updated = True
             else:
-                return "No logré reconocer la fecha. Por favor indícala indicando día, mes y año (por ejemplo: 7 de marzo de 2006 o 07/03/2006)."
+                return "No logré reconocer la fecha. Por favor indícala indicando día, mes y año (por ejemplo: 17 de abril de 2001 o 17/04/2001)."
         elif last_slot == "estado" and not state.slots.estado:
             c_est = clean_mexico_state(last_msg)
             if c_est:
@@ -579,7 +603,6 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
             else:
                 return "Por favor, indícame tu género (hombre o mujer)."
 
-        # Extracción asistida por Groq Llama 3 para entradas compuestas
         if not slot_updated and api_key and "invalid" not in api_key.lower():
             try:
                 client = Groq(api_key=api_key)
@@ -639,7 +662,7 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
         missing_prompt = "tu segundo apellido (apellido materno, o dime 'no tengo' si no cuentas con él)"
     elif not state.slots.fecha:
         missing_slot = "fecha"
-        missing_prompt = "tu fecha de nacimiento exacta (ej. 7 de marzo de 2006 o 07/03/2006)"
+        missing_prompt = "tu fecha de nacimiento exacta (ej. 17 de abril de 2001 o 17/04/2001)"
     elif not state.slots.estado:
         missing_slot = "estado"
         missing_prompt = "en qué estado de la República naciste"
@@ -662,7 +685,7 @@ def get_groq_response(messages_history: list, session_id: str = "default_session
 
     prefix = ""
     if not state.greeted:
-        prefix = "¡Hola! Qué gusto saludarte. Te guiaré paso a paso con tu trámite. "
+        prefix = "¡Hola! Qué gusto saludarte. Te guiaré paso a paso con tu CURP. "
         state.greeted = True
     else:
         acks = ["Perfecto. ", "Muy bien. ", "Anotado. ", "Gracias. "]
